@@ -78,6 +78,42 @@ mode-0600 `system.reg.before-device-hygiene-*` backup under
 `$WINEPREFIX/compat/registry-backups`, refuses a root-device subtree containing
 an unrelated device, and does not change Ubuntu Bluetooth or XRDP.
 
+### Wine 11 recurrence: `Start=4` alone is insufficient
+
+On 2026-09-19, an audited UU 4.39.2.1561 installation stalled again with
+roughly 55,557 Bluetooth device records and an 80 MB `system.reg`. The UU
+server consumed approximately one CPU core for several minutes. The Wine
+Bluetooth service already had `Start=4`, but the UU-owned `winedevice.exe`
+processes still mapped both `winebth.sys` and `winebth.so`. Cleaning the
+registry alone allowed about 95 device records to return immediately.
+
+The launcher and transactional cleaner now include `winebth.sys=d` in
+`WINEDLLOVERRIDES` before starting Wine. This blocks the Bluetooth driver
+inside the dedicated UU process tree in both audio modes; it does not disable
+Ubuntu Bluetooth. Retain the other overrides, including the optional audio
+isolation, when applying this narrow fix to an existing installation.
+
+After deploying those two script changes, run `uu-remote repair-registry`
+once. This removes already accumulated entries and restarts only UU. On the
+affected host, the registry fell to 3,979,849 bytes, device counts stayed zero,
+and the UU-owned device processes no longer mapped the Bluetooth driver.
+The existing account, desktop relay, and input patches were retained. The
+service is enabled at login/boot through the existing unattended setup; no
+new periodic repair loop is needed.
+
+Inspect the actual runtime as well as the registry: a `Start=4` value or one
+clean snapshot alone does not prove the driver cannot load. Use `/proc/PID/maps`
+for **only the `winedevice.exe` processes whose `WINEPREFIX` is this UU prefix**;
+neither `winebth.sys` nor `winebth.so` should be present. Recheck registry counts
+after several minutes. Do not stop unrelated Wine applications.
+
+UU 4.39.x uses structured `.slog` files, so the plaintext milestones below
+apply to older releases. The current verifier checks a fresh structured-log
+signature, exact local version IPC, patched binaries, relay/input helpers,
+and one stable server PID. These are host checks, not proof of a successful
+remote controller connection; reconnect from a real client to confirm video,
+mouse, typing, and dictation.
+
 A healthy cold start records `update_gvinput end` within milliseconds and then
 `room_state_changed: created`. Inspect without publishing account metadata:
 

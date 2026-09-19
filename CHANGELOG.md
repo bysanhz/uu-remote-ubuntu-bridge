@@ -8,6 +8,10 @@ locked by the release manifest.
 
 ### Fixed
 
+- block `winebth.sys` in the dedicated launcher's and registry cleaner's Wine
+  module overrides: on Wine 11 the driver was still loaded despite registry
+  `Start=4`, rebuilding tens of thousands of Bluetooth observations and
+  stalling UU startup; preserve host Bluetooth, audio mode, and input patches
 - serialize semantic clipboard handoff before accepting the next phone or
   dictation commit, retain persistent selection ownership, let eager GNOME
   clipboard-manager reads become quiet, and confirm a new X11 selection

@@ -113,7 +113,7 @@ restore_registry=true
 
 export WINEPREFIX="$wine_prefix"
 export WINEDEBUG=-all
-export WINEDLLOVERRIDES='winedbg.exe=d;mscoree,mshtml='
+export WINEDLLOVERRIDES='winebth.sys=d;winedbg.exe=d;mscoree,mshtml='
 "$wine_bin" reg add \
     'HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\winebth' \
     /v Start /t REG_DWORD /d 4 /f >/dev/null

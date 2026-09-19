@@ -465,7 +465,7 @@ fi
 
 if "$repo_dir/scripts/inspect-wine-device-registry.py" verify \
     "$wine_prefix" >/dev/null; then
-    pass 'Wine device registry cannot accumulate unsupported input or Bluetooth devices'
+    pass 'Wine device registry has no stale input or Bluetooth devices and winebth Start is disabled'
 else
     fail 'Wine device registry hygiene is missing or stale devices remain'
 fi

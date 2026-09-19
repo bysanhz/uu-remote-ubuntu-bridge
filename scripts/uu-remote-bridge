@@ -117,13 +117,16 @@ fi
 export DISPLAY="$bridge_display"
 export WINEPREFIX="$wine_prefix"
 export WINEDEBUG=-all
+# Wine 11 can load its Bluetooth driver despite Services\winebth Start=4.
+# Block that module in this dedicated prefix's process tree, before Wine starts,
+# so ambient Bluetooth observations cannot rebuild the device registry.
 if [[ "$uu_audio_setting" == off ]]; then
     # UU starts a WebRTC capture stream on every controller connection even
     # when the nested FreeRDP relay uses /audio-mode:2. Disable Wine's audio
     # driver only for this dedicated prefix; video and input remain intact.
-    export WINEDLLOVERRIDES='winepulse.drv=d;winedbg.exe=d;mscoree,mshtml='
+    export WINEDLLOVERRIDES='winebth.sys=d;winepulse.drv=d;winedbg.exe=d;mscoree,mshtml='
 else
-    export WINEDLLOVERRIDES='winedbg.exe=d;mscoree,mshtml='
+    export WINEDLLOVERRIDES='winebth.sys=d;winedbg.exe=d;mscoree,mshtml='
 fi
 export OPENSSL_MODULES='C:\Program Files\FreeRDP\ossl-modules'
 export SDL_RENDER_DRIVER=software

@@ -99,6 +99,35 @@ class WineRegistryTests(unittest.TestCase):
                 text=True,
             )
 
+    def test_disabled_service_does_not_hide_accumulated_bluetooth_devices(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            prefix = self.write_registry(
+                Path(temporary),
+                r"""
+[System\\ControlSet001\\Services\\winebth] 1
+"Start"=dword:00000004
+
+[System\\ControlSet001\\Enum\\WINEBTH\\DEVICE\\A] 1
+"DeviceDesc"="Bluetooth device"
+""",
+            )
+            result = subprocess.run(
+                [str(INSPECTOR), "verify", str(prefix)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(0, result.returncode)
+            inspected = subprocess.run(
+                [str(INSPECTOR), "inspect", str(prefix)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            status = json.loads(inspected.stdout)
+            self.assertEqual(4, status["winebth_start"])
+            self.assertEqual(1, status["winebth_devices"])
+            self.assertFalse(status["clean"])
+
     def test_preflight_refuses_an_unrelated_root_hid_device(self):
         with tempfile.TemporaryDirectory() as temporary:
             prefix = self.write_registry(
