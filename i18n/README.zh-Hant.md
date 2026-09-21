@@ -8,6 +8,14 @@
 
 **透過網易 UU 遠端查看並完整控制 Ubuntu GNOME 桌面。**
 
+<p>
+  <a href="../docs/images/uu-remote-ubuntu-desktop-from-macos.webp">
+    <img src="../docs/images/uu-remote-ubuntu-desktop-from-macos.webp" alt="透過 UU Remote Ubuntu Bridge，從 macOS 連線至 Ubuntu GNOME 桌面的實際畫面。" width="1120">
+  </a>
+  <br>
+  <sub>透過 UU Remote Ubuntu Bridge，從 macOS 連線至 Ubuntu GNOME 桌面的實際畫面。</sub>
+</p>
+
 </div>
 
 這個實驗性橋接器在獨立 Wine 前綴中執行官方 Windows 用戶端，並透過本機

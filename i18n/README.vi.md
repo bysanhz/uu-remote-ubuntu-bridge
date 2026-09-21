@@ -8,6 +8,14 @@
 
 **Xem và điều khiển đầy đủ máy tính Ubuntu GNOME bằng NetEase UU Remote.**
 
+<p>
+  <a href="../docs/images/uu-remote-ubuntu-desktop-from-macos.webp">
+    <img src="../docs/images/uu-remote-ubuntu-desktop-from-macos.webp" alt="Màn hình Ubuntu GNOME được truy cập từ macOS qua UU Remote Ubuntu Bridge." width="1120">
+  </a>
+  <br>
+  <sub>Màn hình Ubuntu GNOME được truy cập từ macOS qua UU Remote Ubuntu Bridge.</sub>
+</p>
+
 </div>
 
 Cầu nối thử nghiệm này chạy ứng dụng Windows chính thức trong một Wine prefix

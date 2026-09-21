@@ -8,6 +8,14 @@
 
 **اعرض سطح مكتب Ubuntu GNOME وتحكّم فيه بالكامل بواسطة NetEase UU Remote.**
 
+<p>
+  <a href="../docs/images/uu-remote-ubuntu-desktop-from-macos.webp">
+    <img src="../docs/images/uu-remote-ubuntu-desktop-from-macos.webp" alt="سطح مكتب Ubuntu GNOME يتم الوصول إليه من macOS عبر UU Remote Ubuntu Bridge." width="1120">
+  </a>
+  <br>
+  <sub>سطح مكتب Ubuntu GNOME يتم الوصول إليه من macOS عبر UU Remote Ubuntu Bridge.</sub>
+</p>
+
 </div>
 
 <div dir="rtl">

@@ -8,6 +8,14 @@
 
 **Просмотр и полноценное управление рабочим столом Ubuntu GNOME через NetEase UU Remote.**
 
+<p>
+  <a href="../docs/images/uu-remote-ubuntu-desktop-from-macos.webp">
+    <img src="../docs/images/uu-remote-ubuntu-desktop-from-macos.webp" alt="Рабочий стол Ubuntu GNOME, открытый с macOS через UU Remote Ubuntu Bridge." width="1120">
+  </a>
+  <br>
+  <sub>Рабочий стол Ubuntu GNOME, открытый с macOS через UU Remote Ubuntu Bridge.</sub>
+</p>
+
 </div>
 
 Этот экспериментальный мост запускает официальный клиент Windows в

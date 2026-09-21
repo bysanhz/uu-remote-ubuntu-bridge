@@ -8,6 +8,14 @@
 
 **Afficher et contrôler complètement le bureau Ubuntu GNOME avec NetEase UU Remote.**
 
+<p>
+  <a href="../docs/images/uu-remote-ubuntu-desktop-from-macos.webp">
+    <img src="../docs/images/uu-remote-ubuntu-desktop-from-macos.webp" alt="Un bureau Ubuntu GNOME accessible depuis macOS grâce à UU Remote Ubuntu Bridge." width="1120">
+  </a>
+  <br>
+  <sub>Un bureau Ubuntu GNOME accessible depuis macOS grâce à UU Remote Ubuntu Bridge.</sub>
+</p>
+
 </div>
 
 Cette passerelle expérimentale exécute le client Windows officiel dans un

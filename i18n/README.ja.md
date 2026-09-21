@@ -8,6 +8,14 @@
 
 **NetEase UU Remote から Ubuntu GNOME デスクトップを表示し、完全に操作します。**
 
+<p>
+  <a href="../docs/images/uu-remote-ubuntu-desktop-from-macos.webp">
+    <img src="../docs/images/uu-remote-ubuntu-desktop-from-macos.webp" alt="UU Remote Ubuntu Bridge を使い、macOS から Ubuntu GNOME デスクトップに接続した画面。" width="1120">
+  </a>
+  <br>
+  <sub>UU Remote Ubuntu Bridge を使い、macOS から Ubuntu GNOME デスクトップに接続した画面。</sub>
+</p>
+
 </div>
 
 この実験的なブリッジは、公式 Windows クライアントを分離された Wine

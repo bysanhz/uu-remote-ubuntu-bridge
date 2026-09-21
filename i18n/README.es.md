@@ -8,6 +8,14 @@
 
 **Visualiza y controla por completo el escritorio Ubuntu GNOME mediante NetEase UU Remote.**
 
+<p>
+  <a href="../docs/images/uu-remote-ubuntu-desktop-from-macos.webp">
+    <img src="../docs/images/uu-remote-ubuntu-desktop-from-macos.webp" alt="Un escritorio Ubuntu GNOME al que se accede desde macOS mediante UU Remote Ubuntu Bridge." width="1120">
+  </a>
+  <br>
+  <sub>Un escritorio Ubuntu GNOME al que se accede desde macOS mediante UU Remote Ubuntu Bridge.</sub>
+</p>
+
 </div>
 
 Este puente experimental ejecuta el cliente oficial de Windows dentro de un

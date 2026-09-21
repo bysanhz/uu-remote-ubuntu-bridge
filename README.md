@@ -16,6 +16,14 @@
 [![License MIT](https://img.shields.io/badge/License-MIT-2F81F7)](LICENSE)
 [![Website](https://img.shields.io/badge/Website-lazying.art-0A7EA4)](https://lazying.art)
 
+<p>
+  <a href="docs/images/uu-remote-ubuntu-desktop-from-macos.webp">
+    <img src="docs/images/uu-remote-ubuntu-desktop-from-macos.webp" alt="An Ubuntu GNOME desktop accessed from macOS through UU Remote Ubuntu Bridge." width="1120">
+  </a>
+  <br>
+  <sub>An Ubuntu GNOME desktop accessed from macOS through UU Remote Ubuntu Bridge.</sub>
+</p>
+
 </div>
 
 An experimental compatibility bridge that runs the official Windows UU client
