@@ -149,7 +149,7 @@ if ((${#server_candidates[@]} != 1 || ${#healthd_candidates[@]} != 1)); then
             trap cleanup EXIT
             /opt/wine-stable/bin/wine wineboot -u
             /usr/bin/timeout --kill-after=10s 180s \
-                /opt/wine-stable/bin/wine /input/uu-installer.exe /S
+                /opt/wine-stable/bin/wine /tmp/input/uu-installer.exe /S
             sleep 2
         '
 
@@ -183,21 +183,21 @@ if ((${#server_candidates[@]} != 1 || ${#healthd_candidates[@]} != 1)); then
                 --tmpfs /tmp \
                 --dev /dev \
                 --proc /proc \
-                --dir /input \
-                --dir /work \
-                --bind "$output" /work \
-                --ro-bind "$installer" /input/uu-installer.exe \
+                --dir /tmp/input \
+                --dir /tmp/work \
+                --bind "$output" /tmp/work \
+                --ro-bind "$installer" /tmp/tmp/input/uu-installer.exe \
                 --clearenv \
-                --setenv HOME /work/sandbox-home \
-                --setenv WINEPREFIX /work/wine-prefix \
+                --setenv HOME /tmp/work/sandbox-home \
+                --setenv WINEPREFIX /tmp/work/wine-prefix \
                 --setenv WINEDEBUG -all \
                 --setenv WINEDLLOVERRIDES 'winedbg.exe=d;mscoree,mshtml=' \
-                --setenv XDG_RUNTIME_DIR /work/sandbox-runtime \
+                --setenv XDG_RUNTIME_DIR /tmp/work/sandbox-runtime \
                 --setenv DISPLAY '' \
                 --setenv PATH /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
                 --setenv USER "${USER:-$(id -un)}" \
                 --setenv LOGNAME "${LOGNAME:-$(id -un)}" \
-                --chdir /work \
+                --chdir /tmp/work \
                 /bin/bash -c "$sandbox_body" \
                 >"$output/sandbox-install.log" 2>&1; then
                 printf 'Bubblewrap sandbox install failed. Last log lines:\n' >&2
@@ -238,7 +238,7 @@ if ((${#server_candidates[@]} != 1 || ${#healthd_candidates[@]} != 1)); then
                 --property=RemoveIPC=yes \
                 --property=UMask=0077 \
                 --property="BindPaths=$output:/work" \
-                --property="BindReadOnlyPaths=$installer:/input/uu-installer.exe" \
+                --property="BindReadOnlyPaths=$installer:/tmp/input/uu-installer.exe" \
                 --setenv=HOME=/work/sandbox-home \
                 --setenv=WINEPREFIX=/work/wine-prefix \
                 --setenv=WINEDEBUG=-all \
