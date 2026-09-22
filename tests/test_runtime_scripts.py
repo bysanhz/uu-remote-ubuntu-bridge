@@ -1176,6 +1176,30 @@ terminal_bridge_pid=
                 cwd=REPOSITORY,
             )
 
+    def test_clipboard_bridge_builds_with_jammy_mingw_headers(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            subprocess.run(
+                [
+                    "x86_64-w64-mingw32-gcc",
+                    "-std=c11",
+                    "-O2",
+                    "-Wall",
+                    "-Wextra",
+                    "-Werror",
+                    "-I",
+                    str(REPOSITORY / "src"),
+                    "-Wl,--no-insert-timestamp",
+                    "-municode",
+                    "-o",
+                    str(root / "uu-wine-clipboard-bridge.exe"),
+                    str(REPOSITORY / "src" / "uu_wine_clipboard_bridge.c"),
+                    "-lws2_32",
+                ],
+                check=True,
+                cwd=REPOSITORY,
+            )
+
     def test_text_delay_migration_preserves_v010_behavior(self):
         resolver = REPOSITORY / "scripts" / "runtime-settings.sh"
 
