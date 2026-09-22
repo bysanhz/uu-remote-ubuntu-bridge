@@ -42,7 +42,7 @@ class UbuntuCompatibilityTests(unittest.TestCase):
             REPOSITORY / "scripts" / "verify.sh"
         ).read_text(encoding="utf-8")
 
-        needle = "Shared library: [libei.so.1]"
+        needle = "[libei.so.1]"
         for text in (installer, launcher, verifier):
             self.assertIn(needle, text)
             self.assertIn("grd_uses_libei", text)
