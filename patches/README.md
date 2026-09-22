@@ -15,7 +15,7 @@ signature.
 | `version` | Exact UU release/build identifier |
 | `architecture` | Currently only `x86_64` |
 | `installer` | Filename, official URL, and full SHA-256 |
-| `server` | Server identity, patched identity, and bounded edits |
+| `server` | Server identity, patch mode, runtime identity, and bounded edits |
 | `health_monitor` | Companion filename and original SHA-256 |
 | `landmarks` | Semantic strings used to begin a new audit |
 | `imports` | API boundaries whose behavior matters to the bridge |
@@ -40,9 +40,24 @@ document, maintainer identity and time, and exact copies of
 the tested bytes rather than only a version label. Existing installed
 manifests need not be edited retroactively.
 
+## Server patch modes
+
+`server.patch_mode` is either `binary_patch` or `native`. Older manifests
+without this field are interpreted as `binary_patch`.
+
+A `binary_patch` release must contain at least one bounded patch and its
+`original_sha256` and `patched_sha256` must differ.
+
+A `native` release records an upstream server that already follows the
+compatible runtime path. Its `patches` array is empty and its original and
+runtime SHA-256 values are identical. The patch command verifies the exact
+binary but does not create a backup or rewrite the executable. Native status
+still requires static review, and it does not replace controller/runtime
+acceptance.
+
 ## Patch entries
 
-Every item in `server.patches` contains:
+Every item in `server.patches` for a `binary_patch` release contains:
 
 - a stable `id`
 - a behavior-focused `description` and `rationale`
