@@ -47,6 +47,10 @@ def patch_file(
 ) -> None:
     data = target.read_bytes()
     state, manifest = classify_or_error(data, manifests, target)
+    if state == "native":
+        verify_signatures(data, manifest, patched=False)
+        print(f"native-compatible; no binary patch required ({manifest.version}): {target}")
+        return
     if state == "patched":
         verify_signatures(data, manifest, patched=True)
         print(f"already patched ({manifest.version}): {target}")
@@ -77,6 +81,18 @@ def patch_file(
 def restore_file(
     target: Path, backup: Path, manifests: Sequence[ReleaseManifest]
 ) -> None:
+    if target.exists():
+        target_data = target.read_bytes()
+        target_state, target_manifest = classify_or_error(
+            target_data, manifests, target
+        )
+        if target_state == "native":
+            verify_signatures(target_data, target_manifest, patched=False)
+            print(
+                f"native-compatible; no binary restore required "
+                f"({target_manifest.version}): {target}"
+            )
+            return
     if not backup.exists():
         raise PatchError(f"backup does not exist: {backup}")
     data = backup.read_bytes()
@@ -146,7 +162,7 @@ def parse_args() -> argparse.Namespace:
         if command == "verify":
             child.add_argument(
                 "--expect",
-                choices=("original", "patched", "either"),
+                choices=("original", "patched", "native", "either"),
                 default="either",
                 help="required binary state (default: either)",
             )
