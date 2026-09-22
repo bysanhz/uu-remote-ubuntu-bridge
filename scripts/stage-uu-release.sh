@@ -171,7 +171,7 @@ if ((${#server_candidates[@]} != 1 || ${#healthd_candidates[@]} != 1)); then
                 exit 1
             }
             printf 'Archive extraction had no payload. Using a networkless Bubblewrap sandbox.\n'
-            bwrap \
+            if ! bwrap \
                 --die-with-parent \
                 --new-session \
                 --unshare-all \
@@ -199,7 +199,12 @@ if ((${#server_candidates[@]} != 1 || ${#healthd_candidates[@]} != 1)); then
                 --setenv LOGNAME "${LOGNAME:-$(id -un)}" \
                 --chdir /work \
                 /bin/bash -c "$sandbox_body" \
-                >"$output/sandbox-install.log" 2>&1
+                >"$output/sandbox-install.log" 2>&1; then
+                printf 'Bubblewrap sandbox install failed. Last log lines:\n' >&2
+                tail -n 80 "$output/sandbox-install.log" >&2 || true
+                printf 'Full log: %s\n' "$output/sandbox-install.log" >&2
+                exit 1
+            fi
             staging_method='bubblewrap-sandbox'
             ;;
         systemd)
