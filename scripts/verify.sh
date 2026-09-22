@@ -43,6 +43,11 @@ cursor_guard="$wine_prefix/compat/uu-cursor-guard.dll"
 cursor_guard_log="$wine_prefix/drive_c/users/$bridge_user/Temp/uu-cursor-guard.log"
 cursor_reader_guard_log="$wine_prefix/drive_c/users/$bridge_user/AppData/Local/Temp/uu-cursor-guard.log"
 libei_backport="$wine_prefix/compat/libei/libei.so.1.2.1"
+grd_uses_libei=false
+if /usr/bin/readelf -d /usr/libexec/gnome-remote-desktop-daemon 2>/dev/null | \
+   /usr/bin/grep -Fq 'Shared library: [libei.so.1]'; then
+    grd_uses_libei=true
+fi
 network_filter="$wine_prefix/compat/uu-network-filter.so"
 x11_input_helper="$wine_prefix/compat/uu-x11-input"
 x11_terminal_bridge="$wine_prefix/compat/uu-terminal-bridge"
@@ -743,11 +748,15 @@ if [[ -n "$grd_pid" ]]; then
         /usr/bin/awk '$1 == "Max" && $2 == "open" && $3 == "files" {print $4}' \
             "/proc/$grd_pid/limits"
     )"
-    if [[ -f "$libei_backport" ]] &&
-       /usr/bin/grep -Fq "$libei_backport" "/proc/$grd_pid/maps"; then
-        pass 'GNOME RDP uses the isolated patched libei keymap-FD backport'
+    if [[ "$grd_uses_libei" == true ]]; then
+        if [[ -f "$libei_backport" ]] &&
+           /usr/bin/grep -Fq "$libei_backport" "/proc/$grd_pid/maps"; then
+            pass 'GNOME RDP uses the isolated patched libei keymap-FD backport'
+        else
+            fail 'GNOME RDP is not using the patched libei keymap-FD backport'
+        fi
     else
-        fail 'GNOME RDP is not using the patched libei keymap-FD backport'
+        printf 'INFO  GNOME RDP does not link libei; no keymap-FD backport is required\n'
     fi
     if [[ "$grd_soft_limit" =~ ^[0-9]+$ ]] &&
        ((grd_soft_limit >= 65536)); then
