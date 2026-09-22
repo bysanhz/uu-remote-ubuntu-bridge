@@ -143,6 +143,15 @@ class PatchToolingTests(unittest.TestCase):
         self.assertEqual("4.33.0.8907", manifest.version)
         self.assertEqual(4, len(manifest.patches))
 
+    def test_repository_native_manifest_is_approved(self) -> None:
+        manifest = load_manifest(
+            REPO_DIR / "patches" / "uu-remote-4.41.2.2602.json"
+        )
+        self.assertEqual("4.41.2.2602", manifest.version)
+        self.assertEqual("native", manifest.patch_mode)
+        self.assertEqual(0, len(manifest.patches))
+        self.assertEqual(manifest.original_sha256, manifest.patched_sha256)
+
     def test_cli_enforces_expected_state(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
