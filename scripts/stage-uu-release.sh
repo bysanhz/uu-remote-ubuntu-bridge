@@ -148,7 +148,7 @@ if ((${#server_candidates[@]} != 1 || ${#healthd_candidates[@]} != 1)); then
             }
             trap cleanup EXIT
 
-            installer=/tmp/input/uu-installer.exe
+            installer="${UURB_STAGE_INSTALLER:?sandbox installer path is unavailable}"
             if [[ ! -r "$installer" ]]; then
                 printf "Sandbox installer is not readable: %s\\n" "$installer" >&2
                 /usr/bin/ls -lah /tmp /tmp/input >&2 || true
@@ -200,8 +200,9 @@ if ((${#server_candidates[@]} != 1 || ${#healthd_candidates[@]} != 1)); then
                 --dir /tmp/input \
                 --dir /tmp/work \
                 --bind "$output" /tmp/work \
-                --ro-bind "$installer" /tmp/tmp/input/uu-installer.exe \
+                --ro-bind "$installer" /tmp/input/uu-installer.exe \
                 --clearenv \
+                --setenv UURB_STAGE_INSTALLER /tmp/input/uu-installer.exe \
                 --setenv HOME /tmp/work/sandbox-home \
                 --setenv WINEPREFIX /tmp/work/wine-prefix \
                 --setenv WINEDEBUG -all \
@@ -254,6 +255,7 @@ if ((${#server_candidates[@]} != 1 || ${#healthd_candidates[@]} != 1)); then
                 --property="BindPaths=$output:/work" \
                 --property="BindReadOnlyPaths=$installer:/tmp/input/uu-installer.exe" \
                 --setenv=HOME=/work/sandbox-home \
+                --setenv=UURB_STAGE_INSTALLER=/input/uu-installer.exe \
                 --setenv=WINEPREFIX=/work/wine-prefix \
                 --setenv=WINEDEBUG=-all \
                 --setenv=WINEDLLOVERRIDES='winedbg.exe=d;mscoree,mshtml=' \
