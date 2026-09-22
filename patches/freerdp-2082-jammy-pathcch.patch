@@ -1,0 +1,15 @@
+--- a/winpr/libwinpr/path/CMakeLists.txt
++++ b/winpr/libwinpr/path/CMakeLists.txt
+@@ -23,8 +23,11 @@
+ endif()
+ 
+ if(MSVC OR MINGW)
+   winpr_library_add_public(shlwapi)
++endif()
++
++# Ubuntu 22.04 MinGW does not ship libpathcch.a. WinPR's retained 3.x
++# compatibility path implementation provides the symbols used by this build.
++if(MSVC)
+   winpr_library_add_public(pathcch)
+ endif()
+ 
