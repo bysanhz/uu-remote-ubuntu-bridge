@@ -1128,6 +1128,28 @@ terminal_bridge_pid=
 
         self.assertIn("gcc-mingw-w64-x86-64-win32", workflow)
 
+    def test_input_bridge_builds_with_jammy_mingw_headers(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            subprocess.run(
+                [
+                    "x86_64-w64-mingw32-gcc",
+                    "-std=c11",
+                    "-O2",
+                    "-Wall",
+                    "-Wextra",
+                    "-Werror",
+                    "-Wl,--no-insert-timestamp",
+                    "-shared",
+                    "-o",
+                    str(root / "uu-input-bridge.dll"),
+                    str(REPOSITORY / "src" / "uu_input_bridge.c"),
+                    "-luser32",
+                ],
+                check=True,
+                cwd=REPOSITORY,
+            )
+
     def test_text_delay_migration_preserves_v010_behavior(self):
         resolver = REPOSITORY / "scripts" / "runtime-settings.sh"
 
