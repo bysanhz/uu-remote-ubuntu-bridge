@@ -147,9 +147,23 @@ if ((${#server_candidates[@]} != 1 || ${#healthd_candidates[@]} != 1)); then
                     /opt/wine-stable/bin/wineserver -w || true
             }
             trap cleanup EXIT
+
+            installer=/tmp/input/uu-installer.exe
+            if [[ ! -r "$installer" ]]; then
+                printf "Sandbox installer is not readable: %s\\n" "$installer" >&2
+                /usr/bin/ls -lah /tmp /tmp/input >&2 || true
+                exit 1
+            fi
+            printf "sandbox installer sha256: "
+            /usr/bin/sha256sum "$installer"
+
             /opt/wine-stable/bin/wine wineboot -u
+            wine_installer="$WINEPREFIX/drive_c/uu-installer.exe"
+            /usr/bin/install -m 0500 "$installer" "$wine_installer"
+            printf "wine-prefix installer sha256: "
+            /usr/bin/sha256sum "$wine_installer"
             /usr/bin/timeout --kill-after=10s 180s \
-                /opt/wine-stable/bin/wine /tmp/input/uu-installer.exe /S
+                /opt/wine-stable/bin/wine "C:\\uu-installer.exe" /S
             sleep 2
         '
 
