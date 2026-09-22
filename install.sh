@@ -513,16 +513,28 @@ stop_wine_prefix() {
     "$repo_dir/scripts/stop-wine-prefix" "$wine_prefix" "$wineserver_bin"
 }
 
+downloaded_installer=''
+matched_release_manifest=''
+
 download_verified() {
     local url="$1"
     local expected="$2"
     local destination="$3"
     local attempt
+    local actual
+    local match
+    local matched_version
+    local matched_path
+    local preserved
+
+    downloaded_installer=''
+    matched_release_manifest=''
 
     if [[ -f "$destination" ]] &&
        printf '%s  %s\n' "$expected" "$destination" | sha256sum -c - \
            >/dev/null 2>&1; then
-        return
+        downloaded_installer="$destination"
+        return 0
     fi
 
     mkdir -p "$(dirname -- "$destination")"
@@ -537,19 +549,1404 @@ download_verified() {
             curl --continue-at - --fail --location --retry 3 \
                 --output "$destination.part" "$url"
         fi
-        if printf '%s  %s\n' "$expected" "$destination.part" | \
-            sha256sum -c -; then
+
+        actual="$(sha256sum "$destination.part" | awk '{print $1}')"
+        if [[ "$actual" == "$expected" ]]; then
             mv "$destination.part" "$destination"
             rm -f "$destination.part.aria2"
-            return
+            downloaded_installer="$destination"
+            return 0
         fi
-        rm -f "$destination.part" "$destination.part.aria2"
-        printf 'download hash mismatch; retrying %s (%s/2)\n' \
-            "$url" "$attempt" >&2
-    done
 
-    printf 'download verification failed: %s\n' "$url" >&2
+        match="$("$python_bin" "$repo_dir/scripts/find-installer-manifest.py" \
+            "$destination.part" 2>/dev/null || true)"
+        if [[ "$match" == *
+
+if [[ "$skip_packages" == false ]]; then
+    install_packages
+fi
+
+for command in curl meson ninja patch readelf sha256sum /usr/bin/systemctl \
+    timeout \
+    "$grdctl_bin" "$openssl_bin" "$python_bin" "$secret_tool_bin" \
+    "$wine_bin" "$wineserver_bin" /usr/bin/Xvfb /usr/bin/gsettings \
+    /usr/bin/awk /usr/bin/ip /usr/bin/mcookie /usr/bin/openbox \
+    /usr/bin/script /usr/bin/sort /usr/bin/ss /usr/bin/xauth \
+    /usr/bin/vncviewer /usr/bin/websockify /usr/bin/x11vnc /usr/bin/xclip \
+    /usr/bin/xdotool \
+    /usr/libexec/gnome-remote-desktop-daemon; do
+    if ! command -v "$command" >/dev/null 2>&1; then
+        printf 'missing required command: %s\n' "$command" >&2
+        exit 1
+    fi
+done
+
+grd_uses_libei=false
+if LC_ALL=C /usr/bin/readelf -d \
+    /usr/libexec/gnome-remote-desktop-daemon 2>/dev/null | \
+    /usr/bin/grep -F '[libei.so.1]' >/dev/null; then
+    grd_uses_libei=true
+fi
+
+grdctl_help="$("$grdctl_bin" --help 2>&1 || true)"
+grdctl_has_rdp_command() {
+    local command="$1"
+    /usr/bin/grep -Eq "^[[:space:]]+${command}([[:space:]]|$)" \
+        <<<"$grdctl_help"
+}
+
+manifest_field() {
+    "$python_bin" "$repo_dir/scripts/patch-gameviewer.py" field "$1" \
+        --manifest "$release_manifest"
+}
+
+load_release_manifest() {
+    release_manifest="$(realpath "$release_manifest")"
+    uu_download_url="$(manifest_field installer.url)"
+    uu_installer_filename="$(manifest_field installer.filename)"
+    uu_installer_sha256="$(manifest_field installer.sha256)"
+    release_version="$(manifest_field version)"
+    server_exe="$uu_bin/$(manifest_field server.filename)"
+    healthd_exe="$uu_bin/$(manifest_field health_monitor.filename)"
+    healthd_sha256="$(manifest_field health_monitor.original_sha256)"
+    devcon_exe="$uu_bin/drivers/devcon.exe"
+    devcon_backup="$devcon_exe.uu-original"
+    case "$release_version" in
+        4.33.0.8907|4.34.0.8979|4.39.1.1375|4.39.2.1561)
+            devcon_sha256='46731d6ea59dd9b63ad641c79646bb5ff64e1b877a1226536e3fe34d1ab4ee10'
+            ;;
+        *)
+            printf 'No audited devcon.exe identity exists for UU %s.\n' \
+                "$release_version" >&2
+            exit 1
+            ;;
+    esac
+}
+
+load_release_manifest
+
+export WINEPREFIX="$wine_prefix"
+export WINEDEBUG=-all
+export WINEDLLOVERRIDES='winedbg.exe=d;mscoree,mshtml='
+
+bridge_was_active=false
+if [[ "$prefix_only" == false ]] &&
+   "${systemctl_user[@]}" is-active --quiet uu-remote-bridge.service; then
+    bridge_was_active=true
+fi
+restore_bridge_after_failure() {
+    local status=$?
+
+    if ((status != 0)) && [[ "$bridge_was_active" == true ]]; then
+        "${systemctl_user[@]}" start uu-remote-bridge.service \
+            >/dev/null 2>&1 || true
+    fi
+}
+trap restore_bridge_after_failure EXIT
+
+if [[ "$prefix_only" == false ]]; then
+    port_listener="$(/usr/bin/ss -H -ltnp "sport = :$rdp_port" 2>/dev/null || true)"
+    if [[ -n "$port_listener" ]] &&
+       ! /usr/bin/grep -q 'gnome-remote-de' <<<"$port_listener"; then
+        printf 'RDP port %s is already owned by another process:\n%s\n' \
+            "$rdp_port" "$port_listener" >&2
+        exit 1
+    fi
+    "${systemctl_user[@]}" stop uu-remote-bridge.service >/dev/null 2>&1 || true
+fi
+stop_wine_prefix
+
+if [[ "$prefix_only" == false && "$bridge_display" != auto ]]; then
+    display_number="${bridge_display#:}"
+    if [[ -e "/tmp/.X11-unix/X$display_number" ||
+          -e "/tmp/.X${display_number}-lock" ]]; then
+        printf 'Private X display %s is already in use; use --display auto.\n' \
+            "$bridge_display" >&2
+        exit 1
+    fi
+fi
+
+if [[ ! -f "$uu_dir/GameViewer.exe" || "$upgrade_existing" == true ]]; then
+    if [[ ! -f "$uu_dir/GameViewer.exe" ]]; then
+        fresh_install=true
+    fi
+    mkdir -p "$repo_dir/build/downloads"
+    if [[ -z "$uu_installer" ]]; then
+        uu_installer="$repo_dir/build/downloads/$uu_installer_filename"
+        if ! download_verified "$uu_download_url" "$uu_installer_sha256" \
+            "$uu_installer"; then
+            exit 1
+        fi
+        uu_installer="$downloaded_installer"
+        if [[ -n "$matched_release_manifest" ]]; then
+            release_manifest="$matched_release_manifest"
+            load_release_manifest
+        fi
+    else
+        uu_installer="$(realpath "$uu_installer")"
+    fi
+    printf '%s  %s\n' "$uu_installer_sha256" "$uu_installer" | \
+        sha256sum -c -
+    mkdir -p "$wine_prefix"
+    if [[ "$fresh_install" == true ]]; then
+        "$wine_bin" wineboot -u
+        "$wine_bin" winecfg -v win10
+    else
+        if [[ ! -f "$installed_manifest" ]]; then
+            printf 'Cannot upgrade without the currently installed release manifest.\n' >&2
+            exit 1
+        fi
+        previous_version="$(
+            "$python_bin" "$repo_dir/scripts/patch-gameviewer.py" field version \
+                --manifest "$installed_manifest"
+        )"
+        previous_server_filename="$(
+            "$python_bin" "$repo_dir/scripts/patch-gameviewer.py" field \
+                server.filename --manifest "$installed_manifest"
+        )"
+        previous_healthd_filename="$(
+            "$python_bin" "$repo_dir/scripts/patch-gameviewer.py" field \
+                health_monitor.filename --manifest "$installed_manifest"
+        )"
+        previous_backup_dir="$wine_prefix/compat/release-backups/$previous_version"
+        mkdir -p "$previous_backup_dir"
+        install -m 0600 "$installed_manifest" \
+            "$previous_backup_dir/release-manifest.json"
+        for previous_backup in \
+            "$uu_bin/$previous_server_filename.uu-original" \
+            "$uu_bin/$previous_healthd_filename.uu-original"; do
+            if [[ -f "$previous_backup" ]]; then
+                install -m 0600 "$previous_backup" \
+                    "$previous_backup_dir/${previous_backup##*/}"
+                rm -f "$previous_backup"
+            fi
+        done
+    fi
+    "$wine_bin" "$uu_installer" /S
+    stop_wine_prefix
+fi
+if [[ ! -f "$server_exe" || ! -f "$healthd_exe" ]]; then
+    printf 'UU Remote installation did not produce the expected files.\n' >&2
     exit 1
+fi
+"$python_bin" "$repo_dir/scripts/patch-gameviewer.py" verify "$server_exe" \
+    --manifest "$release_manifest" >/dev/null
+
+"$repo_dir/scripts/build-compat.sh" "$compat_build"
+"$repo_dir/scripts/build-winpr.sh" "$freerdp_build"
+if [[ "$grd_uses_libei" == true ]]; then
+    "$repo_dir/scripts/build-libei.sh" "$libei_build"
+fi
+
+mkdir -p "$wine_prefix/compat" "$freerdp_install"
+if [[ "$grd_uses_libei" == true ]]; then
+    mkdir -p "$libei_install"
+fi
+if [[ -e "$terminal_proxy_install" ]] &&
+   { [[ ! -f "$installed_terminal_proxy" ]] ||
+     ! /usr/bin/cmp -s "$terminal_proxy_install" \
+        "$installed_terminal_proxy"; }; then
+    printf 'Refusing to replace an unknown GameViewer bin/powershell.exe.\n' >&2
+    exit 1
+fi
+install -m 0644 "$release_manifest" "$installed_manifest"
+install -m 0755 \
+    "$compat_build/uu-cursor-guard.dll" \
+    "$compat_build/uu-input-bridge.dll" \
+    "$compat_build/uu-input-broker.exe" \
+    "$compat_build/uu-injector.exe" \
+    "$compat_build/uu-service-control.exe" \
+    "$compat_build/uu-wine-clipboard-bridge.exe" \
+    "$compat_build/uu-terminal-proxy.exe" \
+    "$wine_prefix/compat/"
+install -m 0755 "$compat_build/uu-network-filter.so" \
+    "$wine_prefix/compat/uu-network-filter.so"
+install -m 0755 "$compat_build/uu-x11-input" \
+    "$wine_prefix/compat/uu-x11-input"
+install -m 0755 "$compat_build/uu-x11-clipboard" \
+    "$wine_prefix/compat/uu-x11-clipboard"
+install -m 0755 "$compat_build/uu-terminal-bridge" \
+    "$wine_prefix/compat/uu-terminal-bridge"
+install -m 0755 "$compat_build/uu-terminal-proxy.exe" \
+    "$terminal_proxy_install"
+install -m 0755 "$compat_build/winlogon.exe" \
+    "$wine_prefix/compat/winlogon.exe"
+install -m 0755 "$compat_build/winlogon.exe.so" \
+    "$wine_prefix/compat/winlogon.exe.so"
+install -m 0755 "$freerdp_build/"*.dll "$freerdp_build/sdl-freerdp.exe" \
+    "$freerdp_install/"
+install -m 0755 "$compat_build/winpr-sspi-shim.dll" \
+    "$freerdp_install/winpr-sspi-shim.dll"
+if [[ "$grd_uses_libei" == true ]]; then
+    install -m 0755 "$libei_build/libei.so.1.2.1" \
+        "$libei_install/libei.so.1.2.1"
+    ln -sfn libei.so.1.2.1 "$libei_install/libei.so.1"
+fi
+mkdir -p "$freerdp_install/ossl-modules"
+install -m 0755 "$freerdp_build/ossl-modules/legacy.dll" \
+    "$freerdp_install/ossl-modules/legacy.dll"
+runtime_digest_tmp="$(mktemp "$wine_prefix/compat/.runtime-source-sha256.XXXXXX")"
+"$repo_dir/scripts/runtime-source-digest" >"$runtime_digest_tmp"
+chmod 0644 "$runtime_digest_tmp"
+mv "$runtime_digest_tmp" "$runtime_digest_file"
+
+healthd_backup="$healthd_exe.uu-original"
+healthd_current_hash="$(sha256sum "$healthd_exe" | awk '{print $1}')"
+if [[ "$healthd_current_hash" == "$healthd_sha256" ]]; then
+    [[ -f "$healthd_backup" ]] || cp -p "$healthd_exe" "$healthd_backup"
+elif [[ ! -f "$healthd_backup" ]] || \
+     [[ "$(sha256sum "$healthd_backup" | awk '{print $1}')" != "$healthd_sha256" ]]; then
+    printf 'Refusing to replace an unknown GameViewerHealthd.exe build.\n' >&2
+    exit 1
+fi
+install -m 0755 "$compat_build/uu-healthd-stub.exe" "$healthd_exe"
+
+if [[ -f "$devcon_exe" ]]; then
+    if [[ "$(sha256sum "$devcon_exe" | awk '{print $1}')" != \
+          "$devcon_sha256" ]]; then
+        printf 'Refusing to suppress an unknown devcon.exe build.\n' >&2
+        exit 1
+    fi
+    if [[ -f "$devcon_backup" ]]; then
+        if [[ "$(sha256sum "$devcon_backup" | awk '{print $1}')" != \
+              "$devcon_sha256" ]]; then
+            printf 'Refusing to use an unknown devcon.exe backup.\n' >&2
+            exit 1
+        fi
+        rm -f "$devcon_exe"
+    else
+        mv "$devcon_exe" "$devcon_backup"
+    fi
+elif [[ ! -f "$devcon_backup" ]] || \
+     [[ "$(sha256sum "$devcon_backup" | awk '{print $1}')" != \
+        "$devcon_sha256" ]]; then
+    printf 'The suppressed devcon.exe has no audited backup.\n' >&2
+    exit 1
+fi
+
+"$python_bin" "$repo_dir/scripts/patch-gameviewer.py" patch "$server_exe" \
+    --manifest "$installed_manifest"
+"$repo_dir/scripts/clean-wine-device-registry" "$wine_prefix"
+
+if [[ "$prefix_only" == true ]]; then
+    printf '\nPrepared approved UU release in %s without changing RDP configuration or opening the login UI.\n' \
+        "$wine_prefix"
+    exit 0
+fi
+
+install -d -m 0755 \
+    "$HOME/.local/bin" "$HOME/.local/libexec" \
+    "$HOME/.config/systemd/user" "$HOME/.local/share/applications"
+install -d -m 0700 "$config_dir"
+environment_tmp="$(mktemp "$config_dir/.environment.XXXXXX")"
+printf 'UURB_RDP_PORT=%s\n' "$rdp_port" >"$environment_tmp"
+printf 'UURB_RESOLUTION=%s\n' "$resolution" >>"$environment_tmp"
+printf 'UURB_FOLLOW_DESKTOP_RESOLUTION=%s\n' \
+    "$follow_desktop_resolution" >>"$environment_tmp"
+printf 'UURB_DISPLAY=%s\n' "$bridge_display" >>"$environment_tmp"
+printf 'UURB_DESKTOP_TARGET=%s\n' "$desktop_target" >>"$environment_tmp"
+printf 'UURB_DESKTOP_RELAY=%s\n' "$desktop_relay" >>"$environment_tmp"
+if [[ -n "$shared_vnc_port" ]]; then
+    printf 'UURB_DESKTOP_VNC_PORT=%s\n' "$shared_vnc_port" >>"$environment_tmp"
+fi
+printf 'UURB_VNC_GRAB_KEYBOARD=%s\n' \
+    "$vnc_grab_keyboard" >>"$environment_tmp"
+printf 'UURB_GRD_FD_RESTART_THRESHOLD=%s\n' \
+    "$grd_fd_restart_threshold" >>"$environment_tmp"
+printf 'UURB_TEXT_KEY_DELAY_MS=%s\n' \
+    "$text_key_delay_ms" >>"$environment_tmp"
+printf 'UURB_PHYSICAL_KEY_DELAY_MS=%s\n' \
+    "$physical_key_delay_ms" >>"$environment_tmp"
+printf 'UURB_KEYBOARD_ROUTE=%s\n' \
+    "$keyboard_route" >>"$environment_tmp"
+printf 'UURB_PHONE_TEXT_MODE=%s\n' \
+    "$phone_text_mode" >>"$environment_tmp"
+printf 'UURB_NETWORK_INTERFACE=%s\n' \
+    "$network_interface" >>"$environment_tmp"
+printf 'UURB_CURSOR_GUARD=%s\n' \
+    "$cursor_guard" >>"$environment_tmp"
+printf 'UURB_CURSOR_SIZE=%s\n' \
+    "$cursor_size" >>"$environment_tmp"
+printf 'UURB_CONSOLE_VNC_PORT=%s\n' \
+    "$console_vnc_port" >>"$environment_tmp"
+printf 'UURB_CONSOLE_WEB_PORT=%s\n' \
+    "$console_web_port" >>"$environment_tmp"
+chmod 0600 "$environment_tmp"
+mv "$environment_tmp" "$environment_file"
+install -m 0755 "$repo_dir/scripts/uu-remote-bridge" \
+    "$HOME/.local/bin/uu-remote-bridge"
+install -m 0755 "$repo_dir/scripts/uu-shared-physical-vnc" \
+    "$HOME/.local/bin/uu-shared-physical-vnc"
+install -m 0755 "$repo_dir/scripts/uu-remote" "$HOME/.local/bin/uu-remote"
+install -m 0755 "$repo_dir/scripts/uu-remote-console" \
+    "$HOME/.local/bin/uu-remote-console"
+install -m 0755 "$repo_dir/scripts/uu-agent" "$HOME/.local/bin/uu-agent"
+install -m 0755 "$repo_dir/scripts/uu-ssh" "$HOME/.local/bin/uu-ssh"
+install -m 0755 "$repo_dir/scripts/uu-shell" "$HOME/.local/bin/uu-shell"
+install -m 0755 "$repo_dir/scripts/uu-link" "$HOME/.local/bin/uu-link"
+install -m 0755 "$repo_dir/scripts/upgrade-uu-remote.sh" \
+    "$HOME/.local/bin/uu-remote-upgrade"
+install -m 0755 "$repo_dir/scripts/stop-wine-prefix" \
+    "$HOME/.local/libexec/uu-remote-stop-wine-prefix"
+install -m 0755 "$repo_dir/scripts/clean-wine-device-registry" \
+    "$HOME/.local/libexec/uu-clean-wine-device-registry"
+install -m 0755 "$repo_dir/scripts/inspect-wine-device-registry.py" \
+    "$HOME/.local/libexec/uu-inspect-wine-device-registry.py"
+install -m 0755 "$repo_dir/scripts/uu_connection_status.py" \
+    "$HOME/.local/libexec/uu-connection-status"
+install -m 0755 "$repo_dir/scripts/uu-keyring-unlock.py" \
+    "$HOME/.local/bin/uu-keyring-unlock"
+install -m 0644 "$repo_dir/systemd/uu-remote-bridge.service" \
+    "$HOME/.config/systemd/user/uu-remote-bridge.service"
+install -m 0644 "$repo_dir/systemd/uu-shared-physical-vnc.service" \
+    "$HOME/.config/systemd/user/uu-shared-physical-vnc.service"
+install -m 0644 "$repo_dir/systemd/uu-remote-console.service" \
+    "$HOME/.config/systemd/user/uu-remote-console.service"
+install -m 0644 "$repo_dir/systemd/uu-keyring-unlock.service" \
+    "$HOME/.config/systemd/user/uu-keyring-unlock.service"
+
+desktop_entry="$HOME/.local/share/applications/uu-remote.desktop"
+"$python_bin" - "$repo_dir/desktop/uu-remote.desktop.in" \
+    "$desktop_entry" "$HOME/.local/bin/uu-remote" <<'PY'
+import sys
+from pathlib import Path
+
+template, destination, executable = map(Path, sys.argv[1:])
+escaped = str(executable).replace("\\", "\\\\").replace(" ", "\\ ")
+rendered = template.read_text(encoding="ascii").replace(
+    "@EXEC@", f"{escaped} open"
+)
+destination.write_text(rendered, encoding="ascii")
+PY
+chmod 0644 "$desktop_entry"
+if [[ -d "$HOME/Desktop" ]]; then
+    desktop_shortcut="$HOME/Desktop/UU Remote.desktop"
+    install -m 0755 "$desktop_entry" "$desktop_shortcut"
+    if command -v gio >/dev/null 2>&1; then
+        gio set "$desktop_shortcut" metadata::trusted true \
+            >/dev/null 2>&1 || true
+    fi
+fi
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database "$HOME/.local/share/applications" \
+        >/dev/null 2>&1 || true
+fi
+
+tls_dir="$HOME/.local/share/gnome-remote-desktop"
+tls_cert="$tls_dir/rdp-tls.crt"
+tls_key="$tls_dir/rdp-tls.key"
+mkdir -p "$tls_dir"
+if [[ ! -s "$tls_cert" || ! -s "$tls_key" ]]; then
+    "$openssl_bin" req -new -newkey rsa:3072 -days 730 -nodes -x509 \
+        -subj "/CN=$(hostname) UU Remote bridge" \
+        -keyout "$tls_key" -out "$tls_cert"
+    chmod 0600 "$tls_key"
+fi
+
+rdp_password="$("$secret_tool_bin" lookup service uu-desktop-bridge \
+    username "$bridge_user" || true)"
+if [[ -z "$rdp_password" ]]; then
+    while true; do
+        read -rsp 'Password for the local GNOME RDP relay: ' rdp_password
+        printf '\n'
+        read -rsp 'Repeat the relay password: ' confirmation
+        printf '\n'
+        if [[ -n "$rdp_password" && "$rdp_password" == "$confirmation" ]]; then
+            unset confirmation
+            break
+        fi
+        printf 'Passwords did not match or were empty.\n' >&2
+    done
+fi
+
+if grdctl_has_rdp_command set-port; then
+    "$grdctl_bin" rdp set-port "$rdp_port"
+fi
+"$grdctl_bin" rdp set-tls-cert "$tls_cert"
+"$grdctl_bin" rdp set-tls-key "$tls_key"
+"$grdctl_bin" rdp set-credentials "$bridge_user" "$rdp_password"
+"$grdctl_bin" rdp disable-view-only
+if grdctl_has_rdp_command disable-port-negotiation; then
+    "$grdctl_bin" rdp disable-port-negotiation
+fi
+"$grdctl_bin" rdp enable
+printf '%s' "$rdp_password" | "$secret_tool_bin" store \
+    --label='UU Remote Ubuntu bridge RDP credential' \
+    service uu-desktop-bridge username "$bridge_user"
+relay_vnc_auth_file="$config_dir/relay-vnc.pass"
+relay_vnc_auth_temporary="$(mktemp "$config_dir/relay-vnc.pass.XXXXXX")"
+relay_vnc_password="$(LC_ALL=C printf '%.8s' "$rdp_password")"
+printf -v relay_vnc_auth_quoted '%q' "$relay_vnc_auth_temporary"
+if ! printf '%s\n%s\ny\n' "$relay_vnc_password" "$relay_vnc_password" |
+    /usr/bin/script -qefc \
+        "/usr/bin/x11vnc -storepasswd $relay_vnc_auth_quoted" /dev/null \
+        >/dev/null 2>&1; then
+    rm -f "$relay_vnc_auth_temporary"
+    printf 'Could not create the loopback VNC credential.\n' >&2
+    exit 1
+fi
+chmod 0600 "$relay_vnc_auth_temporary"
+mv -f "$relay_vnc_auth_temporary" "$relay_vnc_auth_file"
+unset relay_vnc_auth_quoted
+unset relay_vnc_password
+unset rdp_password
+
+"${systemctl_user[@]}" daemon-reload
+"${systemctl_user[@]}" reenable uu-remote-bridge.service
+
+if [[ "$fresh_install" == true && "$skip_account_login" == false ]]; then
+    printf '\nUU Remote needs an authenticated account once.\n'
+    printf 'Complete the official UU sign-in window, then close that window.\n'
+    (cd "$uu_dir" && "$wine_bin" GameViewer.exe) || true
+    stop_wine_prefix
+fi
+
+if [[ "$start_service" == true ]]; then
+    "${systemctl_user[@]}" restart uu-remote-bridge.service
+    "$repo_dir/scripts/verify.sh" --quick
+fi
+
+if [[ "$unattended" == true ]]; then
+    "$repo_dir/scripts/configure-unattended.sh" enable
+fi
+
+if [[ "$automatic_updates" == true ]]; then
+    "$repo_dir/scripts/configure-updater.sh" enable --repo "$repo_dir"
+fi
+
+printf '\nInstalled UU Remote Ubuntu bridge.\n'
+printf 'Service: systemctl --user status uu-remote-bridge.service\n'
+printf 'App:     open "UU Remote" or run uu-remote open\n'
+printf 'Console: http://127.0.0.1:%s/vnc.html\n' "$console_web_port"
+printf 'Logs:    uu-remote logs\n'\t'* ]]; then
+            matched_version="${match%%
+
+if [[ "$skip_packages" == false ]]; then
+    install_packages
+fi
+
+for command in curl meson ninja patch readelf sha256sum /usr/bin/systemctl \
+    timeout \
+    "$grdctl_bin" "$openssl_bin" "$python_bin" "$secret_tool_bin" \
+    "$wine_bin" "$wineserver_bin" /usr/bin/Xvfb /usr/bin/gsettings \
+    /usr/bin/awk /usr/bin/ip /usr/bin/mcookie /usr/bin/openbox \
+    /usr/bin/script /usr/bin/sort /usr/bin/ss /usr/bin/xauth \
+    /usr/bin/vncviewer /usr/bin/websockify /usr/bin/x11vnc /usr/bin/xclip \
+    /usr/bin/xdotool \
+    /usr/libexec/gnome-remote-desktop-daemon; do
+    if ! command -v "$command" >/dev/null 2>&1; then
+        printf 'missing required command: %s\n' "$command" >&2
+        exit 1
+    fi
+done
+
+grd_uses_libei=false
+if LC_ALL=C /usr/bin/readelf -d \
+    /usr/libexec/gnome-remote-desktop-daemon 2>/dev/null | \
+    /usr/bin/grep -F '[libei.so.1]' >/dev/null; then
+    grd_uses_libei=true
+fi
+
+grdctl_help="$("$grdctl_bin" --help 2>&1 || true)"
+grdctl_has_rdp_command() {
+    local command="$1"
+    /usr/bin/grep -Eq "^[[:space:]]+${command}([[:space:]]|$)" \
+        <<<"$grdctl_help"
+}
+
+release_manifest="$(realpath "$release_manifest")"
+manifest_field() {
+    "$python_bin" "$repo_dir/scripts/patch-gameviewer.py" field "$1" \
+        --manifest "$release_manifest"
+}
+
+uu_download_url="$(manifest_field installer.url)"
+uu_installer_filename="$(manifest_field installer.filename)"
+uu_installer_sha256="$(manifest_field installer.sha256)"
+release_version="$(manifest_field version)"
+server_exe="$uu_bin/$(manifest_field server.filename)"
+healthd_exe="$uu_bin/$(manifest_field health_monitor.filename)"
+healthd_sha256="$(manifest_field health_monitor.original_sha256)"
+devcon_exe="$uu_bin/drivers/devcon.exe"
+devcon_backup="$devcon_exe.uu-original"
+case "$release_version" in
+    4.33.0.8907|4.34.0.8979|4.39.1.1375|4.39.2.1561)
+        devcon_sha256='46731d6ea59dd9b63ad641c79646bb5ff64e1b877a1226536e3fe34d1ab4ee10'
+        ;;
+    *)
+        printf 'No audited devcon.exe identity exists for UU %s.\n' \
+            "$release_version" >&2
+        exit 1
+        ;;
+esac
+
+export WINEPREFIX="$wine_prefix"
+export WINEDEBUG=-all
+export WINEDLLOVERRIDES='winedbg.exe=d;mscoree,mshtml='
+
+bridge_was_active=false
+if [[ "$prefix_only" == false ]] &&
+   "${systemctl_user[@]}" is-active --quiet uu-remote-bridge.service; then
+    bridge_was_active=true
+fi
+restore_bridge_after_failure() {
+    local status=$?
+
+    if ((status != 0)) && [[ "$bridge_was_active" == true ]]; then
+        "${systemctl_user[@]}" start uu-remote-bridge.service \
+            >/dev/null 2>&1 || true
+    fi
+}
+trap restore_bridge_after_failure EXIT
+
+if [[ "$prefix_only" == false ]]; then
+    port_listener="$(/usr/bin/ss -H -ltnp "sport = :$rdp_port" 2>/dev/null || true)"
+    if [[ -n "$port_listener" ]] &&
+       ! /usr/bin/grep -q 'gnome-remote-de' <<<"$port_listener"; then
+        printf 'RDP port %s is already owned by another process:\n%s\n' \
+            "$rdp_port" "$port_listener" >&2
+        exit 1
+    fi
+    "${systemctl_user[@]}" stop uu-remote-bridge.service >/dev/null 2>&1 || true
+fi
+stop_wine_prefix
+
+if [[ "$prefix_only" == false && "$bridge_display" != auto ]]; then
+    display_number="${bridge_display#:}"
+    if [[ -e "/tmp/.X11-unix/X$display_number" ||
+          -e "/tmp/.X${display_number}-lock" ]]; then
+        printf 'Private X display %s is already in use; use --display auto.\n' \
+            "$bridge_display" >&2
+        exit 1
+    fi
+fi
+
+if [[ ! -f "$uu_dir/GameViewer.exe" || "$upgrade_existing" == true ]]; then
+    if [[ ! -f "$uu_dir/GameViewer.exe" ]]; then
+        fresh_install=true
+    fi
+    mkdir -p "$repo_dir/build/downloads"
+    if [[ -z "$uu_installer" ]]; then
+        uu_installer="$repo_dir/build/downloads/$uu_installer_filename"
+        download_verified "$uu_download_url" "$uu_installer_sha256" \
+            "$uu_installer"
+    else
+        uu_installer="$(realpath "$uu_installer")"
+    fi
+    printf '%s  %s\n' "$uu_installer_sha256" "$uu_installer" | \
+        sha256sum -c -
+    mkdir -p "$wine_prefix"
+    if [[ "$fresh_install" == true ]]; then
+        "$wine_bin" wineboot -u
+        "$wine_bin" winecfg -v win10
+    else
+        if [[ ! -f "$installed_manifest" ]]; then
+            printf 'Cannot upgrade without the currently installed release manifest.\n' >&2
+            exit 1
+        fi
+        previous_version="$(
+            "$python_bin" "$repo_dir/scripts/patch-gameviewer.py" field version \
+                --manifest "$installed_manifest"
+        )"
+        previous_server_filename="$(
+            "$python_bin" "$repo_dir/scripts/patch-gameviewer.py" field \
+                server.filename --manifest "$installed_manifest"
+        )"
+        previous_healthd_filename="$(
+            "$python_bin" "$repo_dir/scripts/patch-gameviewer.py" field \
+                health_monitor.filename --manifest "$installed_manifest"
+        )"
+        previous_backup_dir="$wine_prefix/compat/release-backups/$previous_version"
+        mkdir -p "$previous_backup_dir"
+        install -m 0600 "$installed_manifest" \
+            "$previous_backup_dir/release-manifest.json"
+        for previous_backup in \
+            "$uu_bin/$previous_server_filename.uu-original" \
+            "$uu_bin/$previous_healthd_filename.uu-original"; do
+            if [[ -f "$previous_backup" ]]; then
+                install -m 0600 "$previous_backup" \
+                    "$previous_backup_dir/${previous_backup##*/}"
+                rm -f "$previous_backup"
+            fi
+        done
+    fi
+    "$wine_bin" "$uu_installer" /S
+    stop_wine_prefix
+fi
+if [[ ! -f "$server_exe" || ! -f "$healthd_exe" ]]; then
+    printf 'UU Remote installation did not produce the expected files.\n' >&2
+    exit 1
+fi
+"$python_bin" "$repo_dir/scripts/patch-gameviewer.py" verify "$server_exe" \
+    --manifest "$release_manifest" >/dev/null
+
+"$repo_dir/scripts/build-compat.sh" "$compat_build"
+"$repo_dir/scripts/build-winpr.sh" "$freerdp_build"
+if [[ "$grd_uses_libei" == true ]]; then
+    "$repo_dir/scripts/build-libei.sh" "$libei_build"
+fi
+
+mkdir -p "$wine_prefix/compat" "$freerdp_install"
+if [[ "$grd_uses_libei" == true ]]; then
+    mkdir -p "$libei_install"
+fi
+if [[ -e "$terminal_proxy_install" ]] &&
+   { [[ ! -f "$installed_terminal_proxy" ]] ||
+     ! /usr/bin/cmp -s "$terminal_proxy_install" \
+        "$installed_terminal_proxy"; }; then
+    printf 'Refusing to replace an unknown GameViewer bin/powershell.exe.\n' >&2
+    exit 1
+fi
+install -m 0644 "$release_manifest" "$installed_manifest"
+install -m 0755 \
+    "$compat_build/uu-cursor-guard.dll" \
+    "$compat_build/uu-input-bridge.dll" \
+    "$compat_build/uu-input-broker.exe" \
+    "$compat_build/uu-injector.exe" \
+    "$compat_build/uu-service-control.exe" \
+    "$compat_build/uu-wine-clipboard-bridge.exe" \
+    "$compat_build/uu-terminal-proxy.exe" \
+    "$wine_prefix/compat/"
+install -m 0755 "$compat_build/uu-network-filter.so" \
+    "$wine_prefix/compat/uu-network-filter.so"
+install -m 0755 "$compat_build/uu-x11-input" \
+    "$wine_prefix/compat/uu-x11-input"
+install -m 0755 "$compat_build/uu-x11-clipboard" \
+    "$wine_prefix/compat/uu-x11-clipboard"
+install -m 0755 "$compat_build/uu-terminal-bridge" \
+    "$wine_prefix/compat/uu-terminal-bridge"
+install -m 0755 "$compat_build/uu-terminal-proxy.exe" \
+    "$terminal_proxy_install"
+install -m 0755 "$compat_build/winlogon.exe" \
+    "$wine_prefix/compat/winlogon.exe"
+install -m 0755 "$compat_build/winlogon.exe.so" \
+    "$wine_prefix/compat/winlogon.exe.so"
+install -m 0755 "$freerdp_build/"*.dll "$freerdp_build/sdl-freerdp.exe" \
+    "$freerdp_install/"
+install -m 0755 "$compat_build/winpr-sspi-shim.dll" \
+    "$freerdp_install/winpr-sspi-shim.dll"
+if [[ "$grd_uses_libei" == true ]]; then
+    install -m 0755 "$libei_build/libei.so.1.2.1" \
+        "$libei_install/libei.so.1.2.1"
+    ln -sfn libei.so.1.2.1 "$libei_install/libei.so.1"
+fi
+mkdir -p "$freerdp_install/ossl-modules"
+install -m 0755 "$freerdp_build/ossl-modules/legacy.dll" \
+    "$freerdp_install/ossl-modules/legacy.dll"
+runtime_digest_tmp="$(mktemp "$wine_prefix/compat/.runtime-source-sha256.XXXXXX")"
+"$repo_dir/scripts/runtime-source-digest" >"$runtime_digest_tmp"
+chmod 0644 "$runtime_digest_tmp"
+mv "$runtime_digest_tmp" "$runtime_digest_file"
+
+healthd_backup="$healthd_exe.uu-original"
+healthd_current_hash="$(sha256sum "$healthd_exe" | awk '{print $1}')"
+if [[ "$healthd_current_hash" == "$healthd_sha256" ]]; then
+    [[ -f "$healthd_backup" ]] || cp -p "$healthd_exe" "$healthd_backup"
+elif [[ ! -f "$healthd_backup" ]] || \
+     [[ "$(sha256sum "$healthd_backup" | awk '{print $1}')" != "$healthd_sha256" ]]; then
+    printf 'Refusing to replace an unknown GameViewerHealthd.exe build.\n' >&2
+    exit 1
+fi
+install -m 0755 "$compat_build/uu-healthd-stub.exe" "$healthd_exe"
+
+if [[ -f "$devcon_exe" ]]; then
+    if [[ "$(sha256sum "$devcon_exe" | awk '{print $1}')" != \
+          "$devcon_sha256" ]]; then
+        printf 'Refusing to suppress an unknown devcon.exe build.\n' >&2
+        exit 1
+    fi
+    if [[ -f "$devcon_backup" ]]; then
+        if [[ "$(sha256sum "$devcon_backup" | awk '{print $1}')" != \
+              "$devcon_sha256" ]]; then
+            printf 'Refusing to use an unknown devcon.exe backup.\n' >&2
+            exit 1
+        fi
+        rm -f "$devcon_exe"
+    else
+        mv "$devcon_exe" "$devcon_backup"
+    fi
+elif [[ ! -f "$devcon_backup" ]] || \
+     [[ "$(sha256sum "$devcon_backup" | awk '{print $1}')" != \
+        "$devcon_sha256" ]]; then
+    printf 'The suppressed devcon.exe has no audited backup.\n' >&2
+    exit 1
+fi
+
+"$python_bin" "$repo_dir/scripts/patch-gameviewer.py" patch "$server_exe" \
+    --manifest "$installed_manifest"
+"$repo_dir/scripts/clean-wine-device-registry" "$wine_prefix"
+
+if [[ "$prefix_only" == true ]]; then
+    printf '\nPrepared approved UU release in %s without changing RDP configuration or opening the login UI.\n' \
+        "$wine_prefix"
+    exit 0
+fi
+
+install -d -m 0755 \
+    "$HOME/.local/bin" "$HOME/.local/libexec" \
+    "$HOME/.config/systemd/user" "$HOME/.local/share/applications"
+install -d -m 0700 "$config_dir"
+environment_tmp="$(mktemp "$config_dir/.environment.XXXXXX")"
+printf 'UURB_RDP_PORT=%s\n' "$rdp_port" >"$environment_tmp"
+printf 'UURB_RESOLUTION=%s\n' "$resolution" >>"$environment_tmp"
+printf 'UURB_FOLLOW_DESKTOP_RESOLUTION=%s\n' \
+    "$follow_desktop_resolution" >>"$environment_tmp"
+printf 'UURB_DISPLAY=%s\n' "$bridge_display" >>"$environment_tmp"
+printf 'UURB_DESKTOP_TARGET=%s\n' "$desktop_target" >>"$environment_tmp"
+printf 'UURB_DESKTOP_RELAY=%s\n' "$desktop_relay" >>"$environment_tmp"
+if [[ -n "$shared_vnc_port" ]]; then
+    printf 'UURB_DESKTOP_VNC_PORT=%s\n' "$shared_vnc_port" >>"$environment_tmp"
+fi
+printf 'UURB_VNC_GRAB_KEYBOARD=%s\n' \
+    "$vnc_grab_keyboard" >>"$environment_tmp"
+printf 'UURB_GRD_FD_RESTART_THRESHOLD=%s\n' \
+    "$grd_fd_restart_threshold" >>"$environment_tmp"
+printf 'UURB_TEXT_KEY_DELAY_MS=%s\n' \
+    "$text_key_delay_ms" >>"$environment_tmp"
+printf 'UURB_PHYSICAL_KEY_DELAY_MS=%s\n' \
+    "$physical_key_delay_ms" >>"$environment_tmp"
+printf 'UURB_KEYBOARD_ROUTE=%s\n' \
+    "$keyboard_route" >>"$environment_tmp"
+printf 'UURB_PHONE_TEXT_MODE=%s\n' \
+    "$phone_text_mode" >>"$environment_tmp"
+printf 'UURB_NETWORK_INTERFACE=%s\n' \
+    "$network_interface" >>"$environment_tmp"
+printf 'UURB_CURSOR_GUARD=%s\n' \
+    "$cursor_guard" >>"$environment_tmp"
+printf 'UURB_CURSOR_SIZE=%s\n' \
+    "$cursor_size" >>"$environment_tmp"
+printf 'UURB_CONSOLE_VNC_PORT=%s\n' \
+    "$console_vnc_port" >>"$environment_tmp"
+printf 'UURB_CONSOLE_WEB_PORT=%s\n' \
+    "$console_web_port" >>"$environment_tmp"
+chmod 0600 "$environment_tmp"
+mv "$environment_tmp" "$environment_file"
+install -m 0755 "$repo_dir/scripts/uu-remote-bridge" \
+    "$HOME/.local/bin/uu-remote-bridge"
+install -m 0755 "$repo_dir/scripts/uu-shared-physical-vnc" \
+    "$HOME/.local/bin/uu-shared-physical-vnc"
+install -m 0755 "$repo_dir/scripts/uu-remote" "$HOME/.local/bin/uu-remote"
+install -m 0755 "$repo_dir/scripts/uu-remote-console" \
+    "$HOME/.local/bin/uu-remote-console"
+install -m 0755 "$repo_dir/scripts/uu-agent" "$HOME/.local/bin/uu-agent"
+install -m 0755 "$repo_dir/scripts/uu-ssh" "$HOME/.local/bin/uu-ssh"
+install -m 0755 "$repo_dir/scripts/uu-shell" "$HOME/.local/bin/uu-shell"
+install -m 0755 "$repo_dir/scripts/uu-link" "$HOME/.local/bin/uu-link"
+install -m 0755 "$repo_dir/scripts/upgrade-uu-remote.sh" \
+    "$HOME/.local/bin/uu-remote-upgrade"
+install -m 0755 "$repo_dir/scripts/stop-wine-prefix" \
+    "$HOME/.local/libexec/uu-remote-stop-wine-prefix"
+install -m 0755 "$repo_dir/scripts/clean-wine-device-registry" \
+    "$HOME/.local/libexec/uu-clean-wine-device-registry"
+install -m 0755 "$repo_dir/scripts/inspect-wine-device-registry.py" \
+    "$HOME/.local/libexec/uu-inspect-wine-device-registry.py"
+install -m 0755 "$repo_dir/scripts/uu_connection_status.py" \
+    "$HOME/.local/libexec/uu-connection-status"
+install -m 0755 "$repo_dir/scripts/uu-keyring-unlock.py" \
+    "$HOME/.local/bin/uu-keyring-unlock"
+install -m 0644 "$repo_dir/systemd/uu-remote-bridge.service" \
+    "$HOME/.config/systemd/user/uu-remote-bridge.service"
+install -m 0644 "$repo_dir/systemd/uu-shared-physical-vnc.service" \
+    "$HOME/.config/systemd/user/uu-shared-physical-vnc.service"
+install -m 0644 "$repo_dir/systemd/uu-remote-console.service" \
+    "$HOME/.config/systemd/user/uu-remote-console.service"
+install -m 0644 "$repo_dir/systemd/uu-keyring-unlock.service" \
+    "$HOME/.config/systemd/user/uu-keyring-unlock.service"
+
+desktop_entry="$HOME/.local/share/applications/uu-remote.desktop"
+"$python_bin" - "$repo_dir/desktop/uu-remote.desktop.in" \
+    "$desktop_entry" "$HOME/.local/bin/uu-remote" <<'PY'
+import sys
+from pathlib import Path
+
+template, destination, executable = map(Path, sys.argv[1:])
+escaped = str(executable).replace("\\", "\\\\").replace(" ", "\\ ")
+rendered = template.read_text(encoding="ascii").replace(
+    "@EXEC@", f"{escaped} open"
+)
+destination.write_text(rendered, encoding="ascii")
+PY
+chmod 0644 "$desktop_entry"
+if [[ -d "$HOME/Desktop" ]]; then
+    desktop_shortcut="$HOME/Desktop/UU Remote.desktop"
+    install -m 0755 "$desktop_entry" "$desktop_shortcut"
+    if command -v gio >/dev/null 2>&1; then
+        gio set "$desktop_shortcut" metadata::trusted true \
+            >/dev/null 2>&1 || true
+    fi
+fi
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database "$HOME/.local/share/applications" \
+        >/dev/null 2>&1 || true
+fi
+
+tls_dir="$HOME/.local/share/gnome-remote-desktop"
+tls_cert="$tls_dir/rdp-tls.crt"
+tls_key="$tls_dir/rdp-tls.key"
+mkdir -p "$tls_dir"
+if [[ ! -s "$tls_cert" || ! -s "$tls_key" ]]; then
+    "$openssl_bin" req -new -newkey rsa:3072 -days 730 -nodes -x509 \
+        -subj "/CN=$(hostname) UU Remote bridge" \
+        -keyout "$tls_key" -out "$tls_cert"
+    chmod 0600 "$tls_key"
+fi
+
+rdp_password="$("$secret_tool_bin" lookup service uu-desktop-bridge \
+    username "$bridge_user" || true)"
+if [[ -z "$rdp_password" ]]; then
+    while true; do
+        read -rsp 'Password for the local GNOME RDP relay: ' rdp_password
+        printf '\n'
+        read -rsp 'Repeat the relay password: ' confirmation
+        printf '\n'
+        if [[ -n "$rdp_password" && "$rdp_password" == "$confirmation" ]]; then
+            unset confirmation
+            break
+        fi
+        printf 'Passwords did not match or were empty.\n' >&2
+    done
+fi
+
+if grdctl_has_rdp_command set-port; then
+    "$grdctl_bin" rdp set-port "$rdp_port"
+fi
+"$grdctl_bin" rdp set-tls-cert "$tls_cert"
+"$grdctl_bin" rdp set-tls-key "$tls_key"
+"$grdctl_bin" rdp set-credentials "$bridge_user" "$rdp_password"
+"$grdctl_bin" rdp disable-view-only
+if grdctl_has_rdp_command disable-port-negotiation; then
+    "$grdctl_bin" rdp disable-port-negotiation
+fi
+"$grdctl_bin" rdp enable
+printf '%s' "$rdp_password" | "$secret_tool_bin" store \
+    --label='UU Remote Ubuntu bridge RDP credential' \
+    service uu-desktop-bridge username "$bridge_user"
+relay_vnc_auth_file="$config_dir/relay-vnc.pass"
+relay_vnc_auth_temporary="$(mktemp "$config_dir/relay-vnc.pass.XXXXXX")"
+relay_vnc_password="$(LC_ALL=C printf '%.8s' "$rdp_password")"
+printf -v relay_vnc_auth_quoted '%q' "$relay_vnc_auth_temporary"
+if ! printf '%s\n%s\ny\n' "$relay_vnc_password" "$relay_vnc_password" |
+    /usr/bin/script -qefc \
+        "/usr/bin/x11vnc -storepasswd $relay_vnc_auth_quoted" /dev/null \
+        >/dev/null 2>&1; then
+    rm -f "$relay_vnc_auth_temporary"
+    printf 'Could not create the loopback VNC credential.\n' >&2
+    exit 1
+fi
+chmod 0600 "$relay_vnc_auth_temporary"
+mv -f "$relay_vnc_auth_temporary" "$relay_vnc_auth_file"
+unset relay_vnc_auth_quoted
+unset relay_vnc_password
+unset rdp_password
+
+"${systemctl_user[@]}" daemon-reload
+"${systemctl_user[@]}" reenable uu-remote-bridge.service
+
+if [[ "$fresh_install" == true && "$skip_account_login" == false ]]; then
+    printf '\nUU Remote needs an authenticated account once.\n'
+    printf 'Complete the official UU sign-in window, then close that window.\n'
+    (cd "$uu_dir" && "$wine_bin" GameViewer.exe) || true
+    stop_wine_prefix
+fi
+
+if [[ "$start_service" == true ]]; then
+    "${systemctl_user[@]}" restart uu-remote-bridge.service
+    "$repo_dir/scripts/verify.sh" --quick
+fi
+
+if [[ "$unattended" == true ]]; then
+    "$repo_dir/scripts/configure-unattended.sh" enable
+fi
+
+if [[ "$automatic_updates" == true ]]; then
+    "$repo_dir/scripts/configure-updater.sh" enable --repo "$repo_dir"
+fi
+
+printf '\nInstalled UU Remote Ubuntu bridge.\n'
+printf 'Service: systemctl --user status uu-remote-bridge.service\n'
+printf 'App:     open "UU Remote" or run uu-remote open\n'
+printf 'Console: http://127.0.0.1:%s/vnc.html\n' "$console_web_port"
+printf 'Logs:    uu-remote logs\n'\t'*}"
+            matched_path="${match#*
+
+if [[ "$skip_packages" == false ]]; then
+    install_packages
+fi
+
+for command in curl meson ninja patch readelf sha256sum /usr/bin/systemctl \
+    timeout \
+    "$grdctl_bin" "$openssl_bin" "$python_bin" "$secret_tool_bin" \
+    "$wine_bin" "$wineserver_bin" /usr/bin/Xvfb /usr/bin/gsettings \
+    /usr/bin/awk /usr/bin/ip /usr/bin/mcookie /usr/bin/openbox \
+    /usr/bin/script /usr/bin/sort /usr/bin/ss /usr/bin/xauth \
+    /usr/bin/vncviewer /usr/bin/websockify /usr/bin/x11vnc /usr/bin/xclip \
+    /usr/bin/xdotool \
+    /usr/libexec/gnome-remote-desktop-daemon; do
+    if ! command -v "$command" >/dev/null 2>&1; then
+        printf 'missing required command: %s\n' "$command" >&2
+        exit 1
+    fi
+done
+
+grd_uses_libei=false
+if LC_ALL=C /usr/bin/readelf -d \
+    /usr/libexec/gnome-remote-desktop-daemon 2>/dev/null | \
+    /usr/bin/grep -F '[libei.so.1]' >/dev/null; then
+    grd_uses_libei=true
+fi
+
+grdctl_help="$("$grdctl_bin" --help 2>&1 || true)"
+grdctl_has_rdp_command() {
+    local command="$1"
+    /usr/bin/grep -Eq "^[[:space:]]+${command}([[:space:]]|$)" \
+        <<<"$grdctl_help"
+}
+
+release_manifest="$(realpath "$release_manifest")"
+manifest_field() {
+    "$python_bin" "$repo_dir/scripts/patch-gameviewer.py" field "$1" \
+        --manifest "$release_manifest"
+}
+
+uu_download_url="$(manifest_field installer.url)"
+uu_installer_filename="$(manifest_field installer.filename)"
+uu_installer_sha256="$(manifest_field installer.sha256)"
+release_version="$(manifest_field version)"
+server_exe="$uu_bin/$(manifest_field server.filename)"
+healthd_exe="$uu_bin/$(manifest_field health_monitor.filename)"
+healthd_sha256="$(manifest_field health_monitor.original_sha256)"
+devcon_exe="$uu_bin/drivers/devcon.exe"
+devcon_backup="$devcon_exe.uu-original"
+case "$release_version" in
+    4.33.0.8907|4.34.0.8979|4.39.1.1375|4.39.2.1561)
+        devcon_sha256='46731d6ea59dd9b63ad641c79646bb5ff64e1b877a1226536e3fe34d1ab4ee10'
+        ;;
+    *)
+        printf 'No audited devcon.exe identity exists for UU %s.\n' \
+            "$release_version" >&2
+        exit 1
+        ;;
+esac
+
+export WINEPREFIX="$wine_prefix"
+export WINEDEBUG=-all
+export WINEDLLOVERRIDES='winedbg.exe=d;mscoree,mshtml='
+
+bridge_was_active=false
+if [[ "$prefix_only" == false ]] &&
+   "${systemctl_user[@]}" is-active --quiet uu-remote-bridge.service; then
+    bridge_was_active=true
+fi
+restore_bridge_after_failure() {
+    local status=$?
+
+    if ((status != 0)) && [[ "$bridge_was_active" == true ]]; then
+        "${systemctl_user[@]}" start uu-remote-bridge.service \
+            >/dev/null 2>&1 || true
+    fi
+}
+trap restore_bridge_after_failure EXIT
+
+if [[ "$prefix_only" == false ]]; then
+    port_listener="$(/usr/bin/ss -H -ltnp "sport = :$rdp_port" 2>/dev/null || true)"
+    if [[ -n "$port_listener" ]] &&
+       ! /usr/bin/grep -q 'gnome-remote-de' <<<"$port_listener"; then
+        printf 'RDP port %s is already owned by another process:\n%s\n' \
+            "$rdp_port" "$port_listener" >&2
+        exit 1
+    fi
+    "${systemctl_user[@]}" stop uu-remote-bridge.service >/dev/null 2>&1 || true
+fi
+stop_wine_prefix
+
+if [[ "$prefix_only" == false && "$bridge_display" != auto ]]; then
+    display_number="${bridge_display#:}"
+    if [[ -e "/tmp/.X11-unix/X$display_number" ||
+          -e "/tmp/.X${display_number}-lock" ]]; then
+        printf 'Private X display %s is already in use; use --display auto.\n' \
+            "$bridge_display" >&2
+        exit 1
+    fi
+fi
+
+if [[ ! -f "$uu_dir/GameViewer.exe" || "$upgrade_existing" == true ]]; then
+    if [[ ! -f "$uu_dir/GameViewer.exe" ]]; then
+        fresh_install=true
+    fi
+    mkdir -p "$repo_dir/build/downloads"
+    if [[ -z "$uu_installer" ]]; then
+        uu_installer="$repo_dir/build/downloads/$uu_installer_filename"
+        download_verified "$uu_download_url" "$uu_installer_sha256" \
+            "$uu_installer"
+    else
+        uu_installer="$(realpath "$uu_installer")"
+    fi
+    printf '%s  %s\n' "$uu_installer_sha256" "$uu_installer" | \
+        sha256sum -c -
+    mkdir -p "$wine_prefix"
+    if [[ "$fresh_install" == true ]]; then
+        "$wine_bin" wineboot -u
+        "$wine_bin" winecfg -v win10
+    else
+        if [[ ! -f "$installed_manifest" ]]; then
+            printf 'Cannot upgrade without the currently installed release manifest.\n' >&2
+            exit 1
+        fi
+        previous_version="$(
+            "$python_bin" "$repo_dir/scripts/patch-gameviewer.py" field version \
+                --manifest "$installed_manifest"
+        )"
+        previous_server_filename="$(
+            "$python_bin" "$repo_dir/scripts/patch-gameviewer.py" field \
+                server.filename --manifest "$installed_manifest"
+        )"
+        previous_healthd_filename="$(
+            "$python_bin" "$repo_dir/scripts/patch-gameviewer.py" field \
+                health_monitor.filename --manifest "$installed_manifest"
+        )"
+        previous_backup_dir="$wine_prefix/compat/release-backups/$previous_version"
+        mkdir -p "$previous_backup_dir"
+        install -m 0600 "$installed_manifest" \
+            "$previous_backup_dir/release-manifest.json"
+        for previous_backup in \
+            "$uu_bin/$previous_server_filename.uu-original" \
+            "$uu_bin/$previous_healthd_filename.uu-original"; do
+            if [[ -f "$previous_backup" ]]; then
+                install -m 0600 "$previous_backup" \
+                    "$previous_backup_dir/${previous_backup##*/}"
+                rm -f "$previous_backup"
+            fi
+        done
+    fi
+    "$wine_bin" "$uu_installer" /S
+    stop_wine_prefix
+fi
+if [[ ! -f "$server_exe" || ! -f "$healthd_exe" ]]; then
+    printf 'UU Remote installation did not produce the expected files.\n' >&2
+    exit 1
+fi
+"$python_bin" "$repo_dir/scripts/patch-gameviewer.py" verify "$server_exe" \
+    --manifest "$release_manifest" >/dev/null
+
+"$repo_dir/scripts/build-compat.sh" "$compat_build"
+"$repo_dir/scripts/build-winpr.sh" "$freerdp_build"
+if [[ "$grd_uses_libei" == true ]]; then
+    "$repo_dir/scripts/build-libei.sh" "$libei_build"
+fi
+
+mkdir -p "$wine_prefix/compat" "$freerdp_install"
+if [[ "$grd_uses_libei" == true ]]; then
+    mkdir -p "$libei_install"
+fi
+if [[ -e "$terminal_proxy_install" ]] &&
+   { [[ ! -f "$installed_terminal_proxy" ]] ||
+     ! /usr/bin/cmp -s "$terminal_proxy_install" \
+        "$installed_terminal_proxy"; }; then
+    printf 'Refusing to replace an unknown GameViewer bin/powershell.exe.\n' >&2
+    exit 1
+fi
+install -m 0644 "$release_manifest" "$installed_manifest"
+install -m 0755 \
+    "$compat_build/uu-cursor-guard.dll" \
+    "$compat_build/uu-input-bridge.dll" \
+    "$compat_build/uu-input-broker.exe" \
+    "$compat_build/uu-injector.exe" \
+    "$compat_build/uu-service-control.exe" \
+    "$compat_build/uu-wine-clipboard-bridge.exe" \
+    "$compat_build/uu-terminal-proxy.exe" \
+    "$wine_prefix/compat/"
+install -m 0755 "$compat_build/uu-network-filter.so" \
+    "$wine_prefix/compat/uu-network-filter.so"
+install -m 0755 "$compat_build/uu-x11-input" \
+    "$wine_prefix/compat/uu-x11-input"
+install -m 0755 "$compat_build/uu-x11-clipboard" \
+    "$wine_prefix/compat/uu-x11-clipboard"
+install -m 0755 "$compat_build/uu-terminal-bridge" \
+    "$wine_prefix/compat/uu-terminal-bridge"
+install -m 0755 "$compat_build/uu-terminal-proxy.exe" \
+    "$terminal_proxy_install"
+install -m 0755 "$compat_build/winlogon.exe" \
+    "$wine_prefix/compat/winlogon.exe"
+install -m 0755 "$compat_build/winlogon.exe.so" \
+    "$wine_prefix/compat/winlogon.exe.so"
+install -m 0755 "$freerdp_build/"*.dll "$freerdp_build/sdl-freerdp.exe" \
+    "$freerdp_install/"
+install -m 0755 "$compat_build/winpr-sspi-shim.dll" \
+    "$freerdp_install/winpr-sspi-shim.dll"
+if [[ "$grd_uses_libei" == true ]]; then
+    install -m 0755 "$libei_build/libei.so.1.2.1" \
+        "$libei_install/libei.so.1.2.1"
+    ln -sfn libei.so.1.2.1 "$libei_install/libei.so.1"
+fi
+mkdir -p "$freerdp_install/ossl-modules"
+install -m 0755 "$freerdp_build/ossl-modules/legacy.dll" \
+    "$freerdp_install/ossl-modules/legacy.dll"
+runtime_digest_tmp="$(mktemp "$wine_prefix/compat/.runtime-source-sha256.XXXXXX")"
+"$repo_dir/scripts/runtime-source-digest" >"$runtime_digest_tmp"
+chmod 0644 "$runtime_digest_tmp"
+mv "$runtime_digest_tmp" "$runtime_digest_file"
+
+healthd_backup="$healthd_exe.uu-original"
+healthd_current_hash="$(sha256sum "$healthd_exe" | awk '{print $1}')"
+if [[ "$healthd_current_hash" == "$healthd_sha256" ]]; then
+    [[ -f "$healthd_backup" ]] || cp -p "$healthd_exe" "$healthd_backup"
+elif [[ ! -f "$healthd_backup" ]] || \
+     [[ "$(sha256sum "$healthd_backup" | awk '{print $1}')" != "$healthd_sha256" ]]; then
+    printf 'Refusing to replace an unknown GameViewerHealthd.exe build.\n' >&2
+    exit 1
+fi
+install -m 0755 "$compat_build/uu-healthd-stub.exe" "$healthd_exe"
+
+if [[ -f "$devcon_exe" ]]; then
+    if [[ "$(sha256sum "$devcon_exe" | awk '{print $1}')" != \
+          "$devcon_sha256" ]]; then
+        printf 'Refusing to suppress an unknown devcon.exe build.\n' >&2
+        exit 1
+    fi
+    if [[ -f "$devcon_backup" ]]; then
+        if [[ "$(sha256sum "$devcon_backup" | awk '{print $1}')" != \
+              "$devcon_sha256" ]]; then
+            printf 'Refusing to use an unknown devcon.exe backup.\n' >&2
+            exit 1
+        fi
+        rm -f "$devcon_exe"
+    else
+        mv "$devcon_exe" "$devcon_backup"
+    fi
+elif [[ ! -f "$devcon_backup" ]] || \
+     [[ "$(sha256sum "$devcon_backup" | awk '{print $1}')" != \
+        "$devcon_sha256" ]]; then
+    printf 'The suppressed devcon.exe has no audited backup.\n' >&2
+    exit 1
+fi
+
+"$python_bin" "$repo_dir/scripts/patch-gameviewer.py" patch "$server_exe" \
+    --manifest "$installed_manifest"
+"$repo_dir/scripts/clean-wine-device-registry" "$wine_prefix"
+
+if [[ "$prefix_only" == true ]]; then
+    printf '\nPrepared approved UU release in %s without changing RDP configuration or opening the login UI.\n' \
+        "$wine_prefix"
+    exit 0
+fi
+
+install -d -m 0755 \
+    "$HOME/.local/bin" "$HOME/.local/libexec" \
+    "$HOME/.config/systemd/user" "$HOME/.local/share/applications"
+install -d -m 0700 "$config_dir"
+environment_tmp="$(mktemp "$config_dir/.environment.XXXXXX")"
+printf 'UURB_RDP_PORT=%s\n' "$rdp_port" >"$environment_tmp"
+printf 'UURB_RESOLUTION=%s\n' "$resolution" >>"$environment_tmp"
+printf 'UURB_FOLLOW_DESKTOP_RESOLUTION=%s\n' \
+    "$follow_desktop_resolution" >>"$environment_tmp"
+printf 'UURB_DISPLAY=%s\n' "$bridge_display" >>"$environment_tmp"
+printf 'UURB_DESKTOP_TARGET=%s\n' "$desktop_target" >>"$environment_tmp"
+printf 'UURB_DESKTOP_RELAY=%s\n' "$desktop_relay" >>"$environment_tmp"
+if [[ -n "$shared_vnc_port" ]]; then
+    printf 'UURB_DESKTOP_VNC_PORT=%s\n' "$shared_vnc_port" >>"$environment_tmp"
+fi
+printf 'UURB_VNC_GRAB_KEYBOARD=%s\n' \
+    "$vnc_grab_keyboard" >>"$environment_tmp"
+printf 'UURB_GRD_FD_RESTART_THRESHOLD=%s\n' \
+    "$grd_fd_restart_threshold" >>"$environment_tmp"
+printf 'UURB_TEXT_KEY_DELAY_MS=%s\n' \
+    "$text_key_delay_ms" >>"$environment_tmp"
+printf 'UURB_PHYSICAL_KEY_DELAY_MS=%s\n' \
+    "$physical_key_delay_ms" >>"$environment_tmp"
+printf 'UURB_KEYBOARD_ROUTE=%s\n' \
+    "$keyboard_route" >>"$environment_tmp"
+printf 'UURB_PHONE_TEXT_MODE=%s\n' \
+    "$phone_text_mode" >>"$environment_tmp"
+printf 'UURB_NETWORK_INTERFACE=%s\n' \
+    "$network_interface" >>"$environment_tmp"
+printf 'UURB_CURSOR_GUARD=%s\n' \
+    "$cursor_guard" >>"$environment_tmp"
+printf 'UURB_CURSOR_SIZE=%s\n' \
+    "$cursor_size" >>"$environment_tmp"
+printf 'UURB_CONSOLE_VNC_PORT=%s\n' \
+    "$console_vnc_port" >>"$environment_tmp"
+printf 'UURB_CONSOLE_WEB_PORT=%s\n' \
+    "$console_web_port" >>"$environment_tmp"
+chmod 0600 "$environment_tmp"
+mv "$environment_tmp" "$environment_file"
+install -m 0755 "$repo_dir/scripts/uu-remote-bridge" \
+    "$HOME/.local/bin/uu-remote-bridge"
+install -m 0755 "$repo_dir/scripts/uu-shared-physical-vnc" \
+    "$HOME/.local/bin/uu-shared-physical-vnc"
+install -m 0755 "$repo_dir/scripts/uu-remote" "$HOME/.local/bin/uu-remote"
+install -m 0755 "$repo_dir/scripts/uu-remote-console" \
+    "$HOME/.local/bin/uu-remote-console"
+install -m 0755 "$repo_dir/scripts/uu-agent" "$HOME/.local/bin/uu-agent"
+install -m 0755 "$repo_dir/scripts/uu-ssh" "$HOME/.local/bin/uu-ssh"
+install -m 0755 "$repo_dir/scripts/uu-shell" "$HOME/.local/bin/uu-shell"
+install -m 0755 "$repo_dir/scripts/uu-link" "$HOME/.local/bin/uu-link"
+install -m 0755 "$repo_dir/scripts/upgrade-uu-remote.sh" \
+    "$HOME/.local/bin/uu-remote-upgrade"
+install -m 0755 "$repo_dir/scripts/stop-wine-prefix" \
+    "$HOME/.local/libexec/uu-remote-stop-wine-prefix"
+install -m 0755 "$repo_dir/scripts/clean-wine-device-registry" \
+    "$HOME/.local/libexec/uu-clean-wine-device-registry"
+install -m 0755 "$repo_dir/scripts/inspect-wine-device-registry.py" \
+    "$HOME/.local/libexec/uu-inspect-wine-device-registry.py"
+install -m 0755 "$repo_dir/scripts/uu_connection_status.py" \
+    "$HOME/.local/libexec/uu-connection-status"
+install -m 0755 "$repo_dir/scripts/uu-keyring-unlock.py" \
+    "$HOME/.local/bin/uu-keyring-unlock"
+install -m 0644 "$repo_dir/systemd/uu-remote-bridge.service" \
+    "$HOME/.config/systemd/user/uu-remote-bridge.service"
+install -m 0644 "$repo_dir/systemd/uu-shared-physical-vnc.service" \
+    "$HOME/.config/systemd/user/uu-shared-physical-vnc.service"
+install -m 0644 "$repo_dir/systemd/uu-remote-console.service" \
+    "$HOME/.config/systemd/user/uu-remote-console.service"
+install -m 0644 "$repo_dir/systemd/uu-keyring-unlock.service" \
+    "$HOME/.config/systemd/user/uu-keyring-unlock.service"
+
+desktop_entry="$HOME/.local/share/applications/uu-remote.desktop"
+"$python_bin" - "$repo_dir/desktop/uu-remote.desktop.in" \
+    "$desktop_entry" "$HOME/.local/bin/uu-remote" <<'PY'
+import sys
+from pathlib import Path
+
+template, destination, executable = map(Path, sys.argv[1:])
+escaped = str(executable).replace("\\", "\\\\").replace(" ", "\\ ")
+rendered = template.read_text(encoding="ascii").replace(
+    "@EXEC@", f"{escaped} open"
+)
+destination.write_text(rendered, encoding="ascii")
+PY
+chmod 0644 "$desktop_entry"
+if [[ -d "$HOME/Desktop" ]]; then
+    desktop_shortcut="$HOME/Desktop/UU Remote.desktop"
+    install -m 0755 "$desktop_entry" "$desktop_shortcut"
+    if command -v gio >/dev/null 2>&1; then
+        gio set "$desktop_shortcut" metadata::trusted true \
+            >/dev/null 2>&1 || true
+    fi
+fi
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database "$HOME/.local/share/applications" \
+        >/dev/null 2>&1 || true
+fi
+
+tls_dir="$HOME/.local/share/gnome-remote-desktop"
+tls_cert="$tls_dir/rdp-tls.crt"
+tls_key="$tls_dir/rdp-tls.key"
+mkdir -p "$tls_dir"
+if [[ ! -s "$tls_cert" || ! -s "$tls_key" ]]; then
+    "$openssl_bin" req -new -newkey rsa:3072 -days 730 -nodes -x509 \
+        -subj "/CN=$(hostname) UU Remote bridge" \
+        -keyout "$tls_key" -out "$tls_cert"
+    chmod 0600 "$tls_key"
+fi
+
+rdp_password="$("$secret_tool_bin" lookup service uu-desktop-bridge \
+    username "$bridge_user" || true)"
+if [[ -z "$rdp_password" ]]; then
+    while true; do
+        read -rsp 'Password for the local GNOME RDP relay: ' rdp_password
+        printf '\n'
+        read -rsp 'Repeat the relay password: ' confirmation
+        printf '\n'
+        if [[ -n "$rdp_password" && "$rdp_password" == "$confirmation" ]]; then
+            unset confirmation
+            break
+        fi
+        printf 'Passwords did not match or were empty.\n' >&2
+    done
+fi
+
+if grdctl_has_rdp_command set-port; then
+    "$grdctl_bin" rdp set-port "$rdp_port"
+fi
+"$grdctl_bin" rdp set-tls-cert "$tls_cert"
+"$grdctl_bin" rdp set-tls-key "$tls_key"
+"$grdctl_bin" rdp set-credentials "$bridge_user" "$rdp_password"
+"$grdctl_bin" rdp disable-view-only
+if grdctl_has_rdp_command disable-port-negotiation; then
+    "$grdctl_bin" rdp disable-port-negotiation
+fi
+"$grdctl_bin" rdp enable
+printf '%s' "$rdp_password" | "$secret_tool_bin" store \
+    --label='UU Remote Ubuntu bridge RDP credential' \
+    service uu-desktop-bridge username "$bridge_user"
+relay_vnc_auth_file="$config_dir/relay-vnc.pass"
+relay_vnc_auth_temporary="$(mktemp "$config_dir/relay-vnc.pass.XXXXXX")"
+relay_vnc_password="$(LC_ALL=C printf '%.8s' "$rdp_password")"
+printf -v relay_vnc_auth_quoted '%q' "$relay_vnc_auth_temporary"
+if ! printf '%s\n%s\ny\n' "$relay_vnc_password" "$relay_vnc_password" |
+    /usr/bin/script -qefc \
+        "/usr/bin/x11vnc -storepasswd $relay_vnc_auth_quoted" /dev/null \
+        >/dev/null 2>&1; then
+    rm -f "$relay_vnc_auth_temporary"
+    printf 'Could not create the loopback VNC credential.\n' >&2
+    exit 1
+fi
+chmod 0600 "$relay_vnc_auth_temporary"
+mv -f "$relay_vnc_auth_temporary" "$relay_vnc_auth_file"
+unset relay_vnc_auth_quoted
+unset relay_vnc_password
+unset rdp_password
+
+"${systemctl_user[@]}" daemon-reload
+"${systemctl_user[@]}" reenable uu-remote-bridge.service
+
+if [[ "$fresh_install" == true && "$skip_account_login" == false ]]; then
+    printf '\nUU Remote needs an authenticated account once.\n'
+    printf 'Complete the official UU sign-in window, then close that window.\n'
+    (cd "$uu_dir" && "$wine_bin" GameViewer.exe) || true
+    stop_wine_prefix
+fi
+
+if [[ "$start_service" == true ]]; then
+    "${systemctl_user[@]}" restart uu-remote-bridge.service
+    "$repo_dir/scripts/verify.sh" --quick
+fi
+
+if [[ "$unattended" == true ]]; then
+    "$repo_dir/scripts/configure-unattended.sh" enable
+fi
+
+if [[ "$automatic_updates" == true ]]; then
+    "$repo_dir/scripts/configure-updater.sh" enable --repo "$repo_dir"
+fi
+
+printf '\nInstalled UU Remote Ubuntu bridge.\n'
+printf 'Service: systemctl --user status uu-remote-bridge.service\n'
+printf 'App:     open "UU Remote" or run uu-remote open\n'
+printf 'Console: http://127.0.0.1:%s/vnc.html\n' "$console_web_port"
+printf 'Logs:    uu-remote logs\n'\t'}"
+            matched_release_manifest="$matched_path"
+            destination="$repo_dir/build/downloads/$("$python_bin" \
+                "$repo_dir/scripts/patch-gameviewer.py" field installer.filename \
+                --manifest "$matched_path")"
+            mv "$destination.part" "$destination"
+            rm -f "$destination.part.aria2"
+            downloaded_installer="$destination"
+            printf 'Official download matches approved UU %s; switching manifest automatically.\n' \
+                "$matched_version"
+            return 0
+        fi
+
+        if ((attempt < 2)); then
+            rm -f "$destination.part" "$destination.part.aria2"
+            printf 'download hash mismatch; retrying %s (%s/2)\n' \
+                "$url" "$attempt" >&2
+            continue
+        fi
+
+        preserved="$repo_dir/build/downloads/uu-current-${actual:0:12}.exe"
+        mv "$destination.part" "$preserved"
+        rm -f "$destination.part.aria2"
+        downloaded_installer="$preserved"
+        printf 'download verification failed: %s\n' "$url" >&2
+        printf 'expected sha256: %s\n' "$expected" >&2
+        printf 'actual sha256:   %s\n' "$actual" >&2
+        printf 'unknown installer preserved at: %s\n' "$preserved" >&2
+        printf 'No approved manifest matches these bytes. Do not install or patch them yet.\n' >&2
+        printf 'Stage for review with:\n  %s/scripts/stage-uu-release.sh --installer %q --sandbox-install\n' \
+            "$repo_dir" "$preserved" >&2
+        return 1
+    done
 }
 
 if [[ "$skip_packages" == false ]]; then
