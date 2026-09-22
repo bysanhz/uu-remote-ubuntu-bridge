@@ -727,6 +727,9 @@ terminal_bridge_pid=
     def test_freerdp_runtime_uses_the_retained_matching_revision(self):
         builder = (REPOSITORY / "scripts" / "build-winpr.sh").read_text()
         verifier = (REPOSITORY / "scripts" / "verify.sh").read_text()
+        jammy_patch = (
+            REPOSITORY / "patches" / "freerdp-2082-jammy-pathcch.patch"
+        ).read_text()
 
         self.assertIn("651ab269524adbda4d673efa60d2e391ef7555a7", builder)
         self.assertIn(
@@ -735,6 +738,11 @@ terminal_bridge_pid=
         )
         self.assertNotIn("/lastSuccessfulBuild/", builder)
         self.assertIn("env -u ALL_PROXY -u all_proxy", builder)
+        self.assertIn("freerdp-2082-jammy-pathcch.patch", builder)
+        self.assertIn("reset --hard", builder)
+        self.assertIn("patch --forward --batch -p1", builder)
+        self.assertIn("if(MSVC)", jammy_patch)
+        self.assertIn("winpr_library_add_public(pathcch)", jammy_patch)
         expected = "d391cbb7a21abe4ab5475bff5d96b51329f4f758156bf59b460bc19fe0297492"
         self.assertIn(expected, builder)
         self.assertIn(expected, verifier)
