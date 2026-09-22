@@ -450,6 +450,22 @@ if [[ "$unattended" == true && "$start_service" == false ]]; then
     exit 2
 fi
 
+apt_get() {
+    local proxy
+    local apt_args=(apt-get)
+
+    proxy="${HTTPS_PROXY:-${https_proxy:-${HTTP_PROXY:-${http_proxy:-}}}}"
+    if [[ -n "$proxy" ]]; then
+        apt_args+=(
+            -o "Acquire::http::Proxy=$proxy"
+            -o "Acquire::https::Proxy=$proxy"
+        )
+        printf 'Using configured proxy for APT downloads: %s\n' "$proxy"
+    fi
+
+    sudo "${apt_args[@]}" "$@"
+}
+
 install_winehq() {
     local codename
     local temporary
@@ -473,14 +489,14 @@ install_winehq() {
         /etc/apt/keyrings/winehq-archive.key
     sudo install -m 0644 "$temporary/winehq-$codename.sources" \
         "/etc/apt/sources.list.d/winehq-$codename.sources"
-    sudo apt-get update
-    sudo apt-get install -y --install-recommends winehq-stable
+    apt_get update
+    apt_get install -y --install-recommends winehq-stable
     rm -rf "$temporary"
 }
 
 install_packages() {
-    sudo apt-get update
-    sudo apt-get install -y \
+    apt_get update
+    apt_get install -y \
         acl aria2 binutils ca-certificates cmake crudini curl "$host_freerdp_package" \
         gcc \
         gcc-mingw-w64-x86-64 \
