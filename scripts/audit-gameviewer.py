@@ -307,8 +307,11 @@ def inspect_release(args: argparse.Namespace) -> None:
         "server": {
             "filename": server.name,
             "size": len(data),
+            "patch_mode": baseline.patch_mode,
             "original_sha256": digest,
-            "patched_sha256": "0" * 64,
+            "patched_sha256": (
+                digest if baseline.patch_mode == "native" else "0" * 64
+            ),
             "patches": draft_patches,
         },
         "health_monitor": {
@@ -458,24 +461,39 @@ def finalize_manifest(args: argparse.Namespace) -> None:
     server_section = raw.get("server")
     if not isinstance(server_section, dict):
         raise AuditError("draft server section is missing")
+    patch_mode = server_section.get("patch_mode", "binary_patch")
     patch_values = server_section.get("patches")
-    if not isinstance(patch_values, list) or not patch_values:
-        raise AuditError("draft has no patches")
-    for item in patch_values:
-        if not isinstance(item, dict) or item.get("candidate_status") != "reviewed":
-            patch_id = item.get("id", "unknown") if isinstance(item, dict) else "unknown"
-            raise AuditError(f"patch has not been reviewed: {patch_id}")
-        item.pop("candidate_offsets", None)
-        item.pop("candidate_status", None)
+    if not isinstance(patch_values, list):
+        raise AuditError("draft patches must be a list")
+    if patch_mode == "binary_patch":
+        if not patch_values:
+            raise AuditError("binary-patch draft has no patches")
+        for item in patch_values:
+            if not isinstance(item, dict) or item.get("candidate_status") != "reviewed":
+                patch_id = (
+                    item.get("id", "unknown") if isinstance(item, dict) else "unknown"
+                )
+                raise AuditError(f"patch has not been reviewed: {patch_id}")
+            item.pop("candidate_offsets", None)
+            item.pop("candidate_status", None)
+    elif patch_mode == "native":
+        if patch_values:
+            raise AuditError("native draft must not contain patches")
+    else:
+        raise AuditError(f"unsupported server patch mode: {patch_mode}")
 
     data = server.read_bytes()
     if server_section.get("original_sha256") != sha256(data):
         raise AuditError("server hash no longer matches the draft")
     server_section["size"] = len(data)
-    server_section["patched_sha256"] = "0" * 64
-    provisional = manifest_from_dict(raw, draft_path, require_approved=False)
-    patched = render_patched(data, provisional)
-    server_section["patched_sha256"] = sha256(patched)
+    if patch_mode == "native":
+        server_section["patched_sha256"] = sha256(data)
+        patched = data
+    else:
+        server_section["patched_sha256"] = "0" * 64
+        provisional = manifest_from_dict(raw, draft_path, require_approved=False)
+        patched = render_patched(data, provisional)
+        server_section["patched_sha256"] = sha256(patched)
     raw["review_status"] = "approved"
     raw["review"] = {
         "reviewed_by": args.reviewed_by,
@@ -491,8 +509,12 @@ def finalize_manifest(args: argparse.Namespace) -> None:
     payload = (json.dumps(raw, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
     atomic_write(output, payload, 0o644)
     print(f"approved manifest: {output}")
-    print(f"patched preview sha256: {approved.patched_sha256}")
-    print("No binary was modified. Patch and test a disposable copy next.")
+    if approved.patch_mode == "native":
+        print(f"native server sha256: {approved.original_sha256}")
+        print("No binary patch is required. Test the exact release on a disposable prefix next.")
+    else:
+        print(f"patched preview sha256: {approved.patched_sha256}")
+        print("No binary was modified. Patch and test a disposable copy next.")
 
 
 def parse_args() -> argparse.Namespace:
