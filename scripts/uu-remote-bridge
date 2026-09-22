@@ -142,6 +142,11 @@ state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/uu-remote-bridge"
 runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$UID}/uu-remote-bridge"
 compat_dir="$WINEPREFIX/compat"
 libei_dir="$compat_dir/libei"
+grd_uses_libei=false
+if /usr/bin/readelf -d /usr/libexec/gnome-remote-desktop-daemon 2>/dev/null | \
+   /usr/bin/grep -Fq 'Shared library: [libei.so.1]'; then
+    grd_uses_libei=true
+fi
 freerdp_exe="$WINEPREFIX/drive_c/Program Files/FreeRDP/sdl-freerdp.exe"
 cursor_guard_dll="$compat_dir/uu-cursor-guard.dll"
 cursor_guard_log="$WINEPREFIX/drive_c/users/$bridge_user/Temp/uu-cursor-guard.log"
@@ -167,10 +172,12 @@ private_display_file="$runtime_dir/private-display"
 console_focus_file="$runtime_dir/console-focus"
 wine_stop_bin="$HOME/.local/libexec/uu-remote-stop-wine-prefix"
 
-if [[ ! -x "$libei_dir/libei.so.1.2.1" ||
-      ! -L "$libei_dir/libei.so.1" ]]; then
-    printf 'The patched libei keymap-FD backport is missing; reinstall the bridge.\n' >&2
-    exit 1
+if [[ "$grd_uses_libei" == true ]]; then
+    if [[ ! -x "$libei_dir/libei.so.1.2.1" ||
+          ! -L "$libei_dir/libei.so.1" ]]; then
+        printf 'The patched libei keymap-FD backport is missing; reinstall the bridge.\n' >&2
+        exit 1
+    fi
 fi
 
 xvfb_pid=""
@@ -829,10 +836,12 @@ start_desktop_relay() {
     desktop_environment=(
         "DBUS_SESSION_BUS_ADDRESS=$desktop_bus"
         "DISPLAY=$desktop_display"
-        "LD_LIBRARY_PATH=$libei_dir"
         "OPENSSL_CONF=/etc/ssl/openssl.cnf"
         "OPENSSL_MODULES=$native_openssl_modules"
     )
+    if [[ "$grd_uses_libei" == true ]]; then
+        desktop_environment+=("LD_LIBRARY_PATH=$libei_dir")
+    fi
     if [[ -n "$desktop_wayland" ]]; then
         desktop_environment+=("WAYLAND_DISPLAY=$desktop_wayland")
     fi
