@@ -563,7 +563,42 @@ download_verified() {
 
         match="$("$python_bin" "$repo_dir/scripts/find-installer-manifest.py" \
             "$part" 2>/dev/null || true)"
-        if [[ "$match" == *
+        if [[ "$match" == *"|"* ]]; then
+            matched_version="${match%%|*}"
+            matched_path="${match#*|}"
+            matched_release_manifest="$matched_path"
+            matched_destination="$repo_dir/build/downloads/$("$python_bin" \
+                "$repo_dir/scripts/patch-gameviewer.py" field installer.filename \
+                --manifest "$matched_path")"
+            mv "$part" "$matched_destination"
+            rm -f "$part.aria2"
+            downloaded_installer="$matched_destination"
+            printf 'Official download matches approved UU %s; switching manifest automatically.\n' \
+                "$matched_version"
+            return 0
+        fi
+
+        if ((attempt < 2)); then
+            rm -f "$part" "$part.aria2"
+            printf 'download hash mismatch; retrying %s (%s/2)\n' \
+                "$url" "$attempt" >&2
+            continue
+        fi
+
+        preserved="$repo_dir/build/downloads/uu-current-${actual:0:12}.exe"
+        mv "$part" "$preserved"
+        rm -f "$part.aria2"
+        downloaded_installer="$preserved"
+        printf 'download verification failed: %s\n' "$url" >&2
+        printf 'expected sha256: %s\n' "$expected" >&2
+        printf 'actual sha256:   %s\n' "$actual" >&2
+        printf 'unknown installer preserved at: %s\n' "$preserved" >&2
+        printf 'No approved manifest matches these bytes. Do not install or patch them yet.\n' >&2
+        printf 'Stage for review with:\n  %s/scripts/stage-uu-release.sh --installer %q --sandbox-install\n' \
+            "$repo_dir" "$preserved" >&2
+        return 1
+    done
+}
 
 if [[ "$skip_packages" == false ]]; then
     install_packages
