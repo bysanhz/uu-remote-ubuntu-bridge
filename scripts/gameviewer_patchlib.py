@@ -366,6 +366,8 @@ def masked_candidates(data: bytes, patch: Patch) -> tuple[int, ...]:
 
 
 def manifest_value(manifest: ReleaseManifest, dotted_path: str) -> Any:
+    if dotted_path == "server.patch_mode":
+        return manifest.patch_mode
     value: Any = manifest.raw
     for component in dotted_path.split("."):
         if not isinstance(value, dict) or component not in value:
