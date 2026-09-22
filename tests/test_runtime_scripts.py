@@ -1128,6 +1128,13 @@ terminal_bridge_pid=
 
         self.assertIn("gcc-mingw-w64-x86-64-win32", workflow)
 
+    def test_compat_builder_targets_vista_apis_for_mingw(self):
+        builder = (REPOSITORY / "scripts" / "build-compat.sh").read_text()
+
+        self.assertIn("-D_WIN32_WINNT=0x0600", builder)
+        self.assertIn('mingw_common=("${common[@]}"', builder)
+        self.assertIn('"${mingw_common[@]}"', builder)
+
     def test_input_bridge_builds_with_jammy_mingw_headers(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
