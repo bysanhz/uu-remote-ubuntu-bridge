@@ -12,13 +12,12 @@ build_dir="$work_dir/build"
 build_recipe="$output_dir/.build-recipe"
 build_checksums="$output_dir/.build-sha256"
 
-# Jenkins prunes old numbered nightly artifacts. The last-successful URL is
-# moving, but the download remains fail-closed on the retained build's exact
-# SHA-256. Keep the separately-built WinPR runtime on that retained source
-# revision; if Jenkins serves different bytes later, the hash check rejects it.
-freerdp_commit='168925dac792142f6d0b66e7e2d568a3d439521c'
-sdl_url='https://ci.freerdp.com/job/freerdp-nightly-windows/lastSuccessfulBuild/arch=win64,label=vs2017/artifact/install/bin/sdl-freerdp.exe'
-sdl_sha256='b384347b6d0dd1e0c9912d18f5993b4e30643470e2a627e112debb34e8710762'
+# Pin the exact Jenkins build and matching FreeRDP source revision. Jenkins
+# may prune numbered nightly artifacts later, so the SHA-256 remains the
+# fail-closed identity check for any future cache or mirror recovery.
+freerdp_commit='651ab269524adbda4d673efa60d2e391ef7555a7'
+sdl_url='https://ci.freerdp.com/job/freerdp-nightly-windows/arch=win64,label=vs2017/2082/artifact/install/bin/sdl-freerdp.exe'
+sdl_sha256='d391cbb7a21abe4ab5475bff5d96b51329f4f758156bf59b460bc19fe0297492'
 openssl_url='https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-openssl-3.6.3-1-any.pkg.tar.zst'
 openssl_sha256='82de7ff886112374ffae9e7b3c843c82342e198543fb024790416ef56434fe9f'
 cjson_url='https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-cjson-1.7.19-1-any.pkg.tar.zst'
@@ -53,7 +52,8 @@ download() {
                 --dir="$(dirname -- "$destination")" \
                 --out="$(basename -- "$destination").part" "$url"
         else
-            curl --continue-at - --fail --location --retry 3 \
+            env -u ALL_PROXY -u all_proxy \
+                curl --continue-at - --fail --location --retry 3 \
                 --output "$destination.part" "$url"
         fi
         if printf '%s  %s\n' "$expected" "$destination.part" | \
