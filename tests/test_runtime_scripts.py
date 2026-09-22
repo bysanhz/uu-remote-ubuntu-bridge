@@ -686,7 +686,10 @@ terminal_bridge_pid=
     def test_verifier_handles_audited_structured_log_releases(self):
         verifier = (REPOSITORY / "scripts" / "verify.sh").read_text()
 
-        self.assertIn("4.39.1.1375|4.39.2.1561", verifier)
+        self.assertIn(
+            "4.39.1.1375|4.39.2.1561|4.41.2.2602",
+            verifier,
+        )
         self.assertIn("534c4f470d0a1a0a", verifier)
         self.assertIn("server_log_pattern='log_*.slog'", verifier)
         self.assertIn("structured_release_ipc_ready", verifier)
