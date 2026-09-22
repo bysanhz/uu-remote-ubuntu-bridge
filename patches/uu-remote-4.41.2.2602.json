@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "review_status": "approved",
+  "product": "NetEase UU Remote",
+  "version": "4.41.2.2602",
+  "architecture": "x86_64",
+  "installer": {
+    "filename": "uu-4.41.2.2602.exe",
+    "url": "https://api.nrd.nie.163.com/api/v1/release/dl/1?channel=gwqd",
+    "sha256": "3f6ea7bc3170e94f84cde1225e5a2d35adc153c0ca296f1c1b0a852c14af9be3"
+  },
+  "server": {
+    "filename": "GameViewerServer.exe",
+    "size": 33507832,
+    "patch_mode": "native",
+    "original_sha256": "491af1f34a6f744195a37d0b1144dbd30e23d0ae8739dd55031be9af1efd7bc0",
+    "patched_sha256": "491af1f34a6f744195a37d0b1144dbd30e23d0ae8739dd55031be9af1efd7bc0",
+    "patches": []
+  },
+  "health_monitor": {
+    "filename": "GameViewerHealthd.exe",
+    "original_sha256": "566243981d7e96c33acb40294275c2d8bcc7755be6d1f712ebb448b9fcea8056"
+  },
+  "landmarks": [
+    "virtual switch state:",
+    "virtual_mouse_setting result=updated enabled=",
+    "input_backend_initialized backend=send_input",
+    "input_backend_activation result=failed current=send_input requested=vhid reason=vhid_open_failed",
+    "input_backend_transition from=send_input to=vhid reason=probe_available",
+    "input_backend_transition from=vhid to=send_input reason=release_all_failed"
+  ],
+  "imports": [
+    "USER32.dll!SendInput"
+  ],
+  "review": {
+    "reviewed_by": "operator-assisted static review",
+    "reviewed_at": "2026-09-22T05:40:00Z",
+    "evidence": "Exact staged identities plus disassembly/xref review show SendInput as the initialized backend and explicit vhid failure transitions back to SendInput. The 4.39.x constructor patch signature is absent; no binary patch is applied. Runtime/controller acceptance remains pending."
+  }
+}
