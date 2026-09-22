@@ -286,13 +286,37 @@ install -m 0600 "${healthd_candidates[0]}" "$output/GameViewerHealthd.exe"
 server_sha256="$(sha256sum "$output/GameViewerServer.exe" | awk '{print $1}')"
 healthd_sha256="$(sha256sum "$output/GameViewerHealthd.exe" | awk '{print $1}')"
 
-printf '%s\n' \
-    "installer=$installer" \
-    "installer_sha256=$installer_sha256" \
-    "server_sha256=$server_sha256" \
-    "healthd_sha256=$healthd_sha256" \
-    "staging_method=$staging_method" \
-    >"$output/SHA256"
+devcon_sha256=''
+search_roots=()
+[[ -d "$extract_dir" ]] && search_roots+=("$extract_dir")
+[[ -d "$sandbox_prefix" ]] && search_roots+=("$sandbox_prefix")
+if ((${#search_roots[@]})); then
+    mapfile -d '' devcon_candidates < <(
+        find "${search_roots[@]}" -type f \
+            -path '*/bin/drivers/devcon.exe' -print0 2>/dev/null
+    )
+else
+    devcon_candidates=()
+fi
+if ((${#devcon_candidates[@]} == 1)); then
+    install -m 0600 "${devcon_candidates[0]}" "$output/devcon.exe"
+    devcon_sha256="$(sha256sum "$output/devcon.exe" | awk '{print $1}')"
+elif ((${#devcon_candidates[@]} > 1)); then
+    printf 'WARNING: found %s devcon.exe candidates; none was staged.\n' \
+        "${#devcon_candidates[@]}" >&2
+fi
+
+{
+    printf '%s\n' \
+        "installer=$installer" \
+        "installer_sha256=$installer_sha256" \
+        "server_sha256=$server_sha256" \
+        "healthd_sha256=$healthd_sha256"
+    if [[ -n "$devcon_sha256" ]]; then
+        printf 'devcon_sha256=%s\n' "$devcon_sha256"
+    fi
+    printf 'staging_method=%s\n' "$staging_method"
+} >"$output/SHA256"
 chmod 0600 "$output/SHA256" "$output/7z.log"
 
 if [[ "$keep_workdir" == false ]]; then
@@ -304,6 +328,9 @@ fi
 
 printf 'staged server: %s\n' "$output/GameViewerServer.exe"
 printf 'staged health monitor: %s\n' "$output/GameViewerHealthd.exe"
+if [[ -n "$devcon_sha256" ]]; then
+    printf 'staged driver helper: %s\n' "$output/devcon.exe"
+fi
 printf 'hash record: %s\n' "$output/SHA256"
 if [[ "$staging_method" == *-sandbox ]]; then
     printf 'The installer executed only inside the locked-down transient sandbox.\n'
