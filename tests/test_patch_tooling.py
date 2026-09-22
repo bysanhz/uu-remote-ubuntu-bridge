@@ -86,6 +86,19 @@ class PatchToolingTests(unittest.TestCase):
         self.assertEqual(("patched", manifest), classify(self.patched, [manifest]))
         self.assertEqual(("unknown", None), classify(self.original + b"x", [manifest]))
 
+    def test_native_manifest_is_verified_without_rewriting(self) -> None:
+        native = copy.deepcopy(self.raw)
+        native["version"] = "native-1"
+        native["server"]["patch_mode"] = "native"
+        native["server"]["patches"] = []
+        native["server"]["patched_sha256"] = native["server"]["original_sha256"]
+
+        manifest = manifest_from_dict(native, Path("native.json"))
+        self.assertEqual("native", manifest.patch_mode)
+        self.assertEqual(("native", manifest), classify(self.original, [manifest]))
+        self.assertEqual(self.original, make_patched(self.original, manifest))
+        verify_signatures(self.original, manifest, patched=False)
+
     def test_masked_candidate_finds_shifted_signature(self) -> None:
         manifest = self.manifest()
         shifted = b"prefix" + self.original
@@ -117,6 +130,9 @@ class PatchToolingTests(unittest.TestCase):
         manifest = self.manifest()
         self.assertEqual("test-1", manifest_value(manifest, "version"))
         self.assertEqual("1" * 64, manifest_value(manifest, "installer.sha256"))
+        self.assertEqual(
+            "binary_patch", manifest_value(manifest, "server.patch_mode")
+        )
         with self.assertRaises(ManifestError):
             manifest_value(manifest, "server.patches")
 
@@ -157,6 +173,39 @@ class PatchToolingTests(unittest.TestCase):
             self.assertEqual(0, accepted.returncode, accepted.stderr)
             self.assertEqual(1, rejected.returncode)
             self.assertIn("expected patched state", rejected.stderr)
+
+    def test_cli_native_patch_is_a_noop_without_backup(self) -> None:
+        native = copy.deepcopy(self.raw)
+        native["version"] = "native-cli"
+        native["server"]["patch_mode"] = "native"
+        native["server"]["patches"] = []
+        native["server"]["patched_sha256"] = native["server"]["original_sha256"]
+
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            manifest_path = directory / "release.json"
+            server_path = directory / "server.exe"
+            backup_path = directory / "server.exe.uu-original"
+            manifest_path.write_text(json.dumps(native), encoding="utf-8")
+            server_path.write_bytes(self.original)
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(REPO_DIR / "scripts" / "patch-gameviewer.py"),
+                    "patch",
+                    str(server_path),
+                    "--manifest",
+                    str(manifest_path),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn("no binary patch required", result.stdout)
+            self.assertEqual(self.original, server_path.read_bytes())
+            self.assertFalse(backup_path.exists())
 
     def test_cli_refuses_restore_over_unknown_target(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
