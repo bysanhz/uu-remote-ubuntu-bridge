@@ -729,7 +729,12 @@ terminal_bridge_pid=
         verifier = (REPOSITORY / "scripts" / "verify.sh").read_text()
 
         self.assertIn("168925dac792142f6d0b66e7e2d568a3d439521c", builder)
-        self.assertIn("/2064/artifact/install/bin/sdl-freerdp.exe", builder)
+        self.assertIn(
+            "/lastSuccessfulBuild/arch=win64,label=vs2017/"
+            "artifact/install/bin/sdl-freerdp.exe",
+            builder,
+        )
+        self.assertIn("env -u ALL_PROXY -u all_proxy", builder)
         expected = "b384347b6d0dd1e0c9912d18f5993b4e30643470e2a627e112debb34e8710762"
         self.assertIn(expected, builder)
         self.assertIn(expected, verifier)
