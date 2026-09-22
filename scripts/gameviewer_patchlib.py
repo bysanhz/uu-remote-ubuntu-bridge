@@ -40,6 +40,7 @@ class ReleaseManifest:
     version: str
     architecture: str
     review_status: str
+    patch_mode: str
     installer_filename: str
     installer_url: str
     installer_sha256: str
@@ -153,9 +154,17 @@ def manifest_from_dict(
     if not isinstance(server_size, int) or isinstance(server_size, bool) or server_size <= 0:
         raise ManifestError("server.size must be a positive integer")
 
+    patch_mode = server.get("patch_mode", "binary_patch")
+    if patch_mode not in ("binary_patch", "native"):
+        raise ManifestError("server.patch_mode must be 'binary_patch' or 'native'")
+
     patch_values = server.get("patches")
-    if not isinstance(patch_values, list) or not patch_values:
-        raise ManifestError("server.patches must be a non-empty list")
+    if not isinstance(patch_values, list):
+        raise ManifestError("server.patches must be a list")
+    if patch_mode == "binary_patch" and not patch_values:
+        raise ManifestError("binary_patch releases require at least one server patch")
+    if patch_mode == "native" and patch_values:
+        raise ManifestError("native releases must not contain server patches")
 
     patches: list[Patch] = []
     patch_ids: set[str] = set()
@@ -190,8 +199,10 @@ def manifest_from_dict(
 
     original_digest = _sha256(server, "original_sha256", "server")
     patched_digest = _sha256(server, "patched_sha256", "server")
-    if original_digest == patched_digest:
-        raise ManifestError("server original and patched hashes are identical")
+    if patch_mode == "binary_patch" and original_digest == patched_digest:
+        raise ManifestError("binary_patch releases require different server hashes")
+    if patch_mode == "native" and original_digest != patched_digest:
+        raise ManifestError("native releases require identical server hashes")
 
     return ReleaseManifest(
         path=path,
@@ -199,6 +210,7 @@ def manifest_from_dict(
         version=version,
         architecture=architecture,
         review_status=review_status,
+        patch_mode=patch_mode,
         installer_filename=_string(installer, "filename", "installer"),
         installer_url=_string(installer, "url", "installer"),
         installer_sha256=_sha256(installer, "sha256", "installer"),
@@ -241,7 +253,9 @@ def load_manifests(paths: Sequence[Path] | None = None) -> tuple[ReleaseManifest
         if manifest.version in versions:
             raise ManifestError(f"duplicate release version: {manifest.version}")
         versions.add(manifest.version)
-        for digest in (manifest.original_sha256, manifest.patched_sha256):
+        for digest in dict.fromkeys(
+            (manifest.original_sha256, manifest.patched_sha256)
+        ):
             if digest in digests:
                 raise ManifestError(f"duplicate server hash across manifests: {digest}")
             digests.add(digest)
@@ -254,6 +268,8 @@ def classify(
     digest = sha256(data)
     for manifest in manifests:
         if digest == manifest.original_sha256:
+            if manifest.patch_mode == "native":
+                return "native", manifest
             return "original", manifest
         if digest == manifest.patched_sha256:
             return "patched", manifest
