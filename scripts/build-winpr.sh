@@ -12,10 +12,12 @@ build_dir="$work_dir/build"
 build_recipe="$output_dir/.build-recipe"
 build_checksums="$output_dir/.build-sha256"
 
-# Jenkins prunes old nightly artifacts. Keep the Windows client and the
-# separately-built WinPR runtime on the exact same retained source revision.
+# Jenkins prunes old numbered nightly artifacts. The last-successful URL is
+# moving, but the download remains fail-closed on the retained build's exact
+# SHA-256. Keep the separately-built WinPR runtime on that retained source
+# revision; if Jenkins serves different bytes later, the hash check rejects it.
 freerdp_commit='168925dac792142f6d0b66e7e2d568a3d439521c'
-sdl_url='https://ci.freerdp.com/job/freerdp-nightly-windows/arch=win64,label=vs2017/2064/artifact/install/bin/sdl-freerdp.exe'
+sdl_url='https://ci.freerdp.com/job/freerdp-nightly-windows/lastSuccessfulBuild/arch=win64,label=vs2017/artifact/install/bin/sdl-freerdp.exe'
 sdl_sha256='b384347b6d0dd1e0c9912d18f5993b4e30643470e2a627e112debb34e8710762'
 openssl_url='https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-openssl-3.6.3-1-any.pkg.tar.zst'
 openssl_sha256='82de7ff886112374ffae9e7b3c843c82342e198543fb024790416ef56434fe9f'
@@ -44,7 +46,8 @@ download() {
     fi
     for attempt in 1 2; do
         if command -v aria2c >/dev/null 2>&1; then
-            aria2c --allow-overwrite=true --auto-file-renaming=false \
+            env -u ALL_PROXY -u all_proxy \
+                aria2c --allow-overwrite=true --auto-file-renaming=false \
                 --continue=true --max-connection-per-server=8 \
                 --min-split-size=1M --split=8 \
                 --dir="$(dirname -- "$destination")" \
