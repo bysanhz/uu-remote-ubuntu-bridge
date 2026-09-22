@@ -525,6 +525,8 @@ download_verified() {
     local match
     local matched_version
     local matched_path
+    local matched_destination
+    local part
     local preserved
 
     downloaded_installer=''
@@ -539,27 +541,28 @@ download_verified() {
 
     mkdir -p "$(dirname -- "$destination")"
     for attempt in 1 2; do
+        part="$destination.part"
         if command -v aria2c >/dev/null 2>&1; then
             aria2c --allow-overwrite=true --auto-file-renaming=false \
                 --continue=true --max-connection-per-server=8 \
                 --max-tries=5 --min-split-size=1M --retry-wait=2 --split=8 \
-                --dir="$(dirname -- "$destination")" \
-                --out="$(basename -- "$destination").part" "$url"
+                --dir="$(dirname -- "$part")" \
+                --out="$(basename -- "$part")" "$url"
         else
             curl --continue-at - --fail --location --retry 3 \
-                --output "$destination.part" "$url"
+                --output "$part" "$url"
         fi
 
-        actual="$(sha256sum "$destination.part" | awk '{print $1}')"
+        actual="$(sha256sum "$part" | awk '{print $1}')"
         if [[ "$actual" == "$expected" ]]; then
-            mv "$destination.part" "$destination"
-            rm -f "$destination.part.aria2"
+            mv "$part" "$destination"
+            rm -f "$part.aria2"
             downloaded_installer="$destination"
             return 0
         fi
 
         match="$("$python_bin" "$repo_dir/scripts/find-installer-manifest.py" \
-            "$destination.part" 2>/dev/null || true)"
+            "$part" 2>/dev/null || true)"
         if [[ "$match" == *
 
 if [[ "$skip_packages" == false ]]; then
@@ -1916,27 +1919,27 @@ printf 'App:     open "UU Remote" or run uu-remote open\n'
 printf 'Console: http://127.0.0.1:%s/vnc.html\n' "$console_web_port"
 printf 'Logs:    uu-remote logs\n'\t'}"
             matched_release_manifest="$matched_path"
-            destination="$repo_dir/build/downloads/$("$python_bin" \
+            matched_destination="$repo_dir/build/downloads/$("$python_bin" \
                 "$repo_dir/scripts/patch-gameviewer.py" field installer.filename \
                 --manifest "$matched_path")"
-            mv "$destination.part" "$destination"
-            rm -f "$destination.part.aria2"
-            downloaded_installer="$destination"
+            mv "$part" "$matched_destination"
+            rm -f "$part.aria2"
+            downloaded_installer="$matched_destination"
             printf 'Official download matches approved UU %s; switching manifest automatically.\n' \
                 "$matched_version"
             return 0
         fi
 
         if ((attempt < 2)); then
-            rm -f "$destination.part" "$destination.part.aria2"
+            rm -f "$part" "$part.aria2"
             printf 'download hash mismatch; retrying %s (%s/2)\n' \
                 "$url" "$attempt" >&2
             continue
         fi
 
         preserved="$repo_dir/build/downloads/uu-current-${actual:0:12}.exe"
-        mv "$destination.part" "$preserved"
-        rm -f "$destination.part.aria2"
+        mv "$part" "$preserved"
+        rm -f "$part.aria2"
         downloaded_installer="$preserved"
         printf 'download verification failed: %s\n' "$url" >&2
         printf 'expected sha256: %s\n' "$expected" >&2
