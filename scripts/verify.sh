@@ -22,6 +22,7 @@ manifest_field() {
         --manifest "$release_manifest"
 }
 release_version="$(manifest_field version)"
+server_patch_mode="$(manifest_field server.patch_mode)"
 server="$wine_prefix/drive_c/Program Files/Netease/GameViewer/bin/$(manifest_field server.filename)"
 healthd="$wine_prefix/drive_c/Program Files/Netease/GameViewer/bin/$(manifest_field health_monitor.filename)"
 healthd_original_sha256="$(manifest_field health_monitor.original_sha256)"
@@ -31,7 +32,7 @@ uuyc_cli="$wine_prefix/drive_c/Program Files/Netease/GameViewer/bin/uuyc-cli.exe
 devcon="$wine_prefix/drive_c/Program Files/Netease/GameViewer/bin/drivers/devcon.exe"
 devcon_backup="$devcon.uu-original"
 case "$release_version" in
-    4.33.0.8907|4.34.0.8979|4.39.1.1375|4.39.2.1561)
+    4.33.0.8907|4.34.0.8979|4.39.1.1375|4.39.2.1561|4.41.2.2602)
         devcon_original_sha256='46731d6ea59dd9b63ad641c79646bb5ff64e1b877a1226536e3fe34d1ab4ee10'
         ;;
     *)
@@ -441,9 +442,15 @@ else
     fail 'installed runtime is older or differs from this source checkout; reinstall it'
 fi
 
+expected_server_state='patched'
+expected_server_description='audited patched build'
+if [[ "$server_patch_mode" == native ]]; then
+    expected_server_state='native'
+    expected_server_description='audited native-compatible build'
+fi
 if /usr/bin/python3 "$repo_dir/scripts/patch-gameviewer.py" verify "$server" \
-    --manifest "$release_manifest" --expect patched >/dev/null; then
-    pass 'GameViewerServer.exe is the audited patched build'
+    --manifest "$release_manifest" --expect "$expected_server_state" >/dev/null; then
+    pass "GameViewerServer.exe is the $expected_server_description"
 else
     fail 'GameViewerServer.exe verification failed'
 fi
