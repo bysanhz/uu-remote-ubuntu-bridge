@@ -8,8 +8,8 @@
 
 **Use NetEase UU Remote to view and fully control the Ubuntu GNOME desktop.**
 
-[![Ubuntu 24.04](https://img.shields.io/badge/Ubuntu-24.04-E95420?logo=ubuntu&logoColor=white)](https://ubuntu.com/)
-[![GNOME 46](https://img.shields.io/badge/GNOME-46-4A86CF?logo=gnome&logoColor=white)](https://www.gnome.org/)
+[![Ubuntu 22.04 / 24.04](https://img.shields.io/badge/Ubuntu-22.04%20%7C%2024.04-E95420?logo=ubuntu&logoColor=white)](https://ubuntu.com/)
+[![GNOME 42 / 46](https://img.shields.io/badge/GNOME-42%20%7C%2046-4A86CF?logo=gnome&logoColor=white)](https://www.gnome.org/)
 [![UU Remote](https://img.shields.io/badge/UU_Remote-4.33.0.8907-00A870)](https://uuyc.163.com/)
 [![Wine 11](https://img.shields.io/badge/Wine-11.0-800000?logo=wine&logoColor=white)](https://www.winehq.org/)
 [![Patch policy](https://img.shields.io/badge/Patches-fail--closed-1F883D)](docs/security.md)
@@ -48,9 +48,14 @@ the official Windows client and verifies the complete installer hash. Do not
 install an unverified `.deb`, `.rpm`, or AppImage from a look-alike download
 site.
 
-The supported host is x86-64 Ubuntu 24.04 with a logged-in GNOME 46 desktop
-(physical, Wayland, Xorg, or XRDP). The installer checks this boundary and
-fails before making partial changes on an unsupported OS or architecture.
+This fork supports x86-64 Ubuntu 22.04 (GNOME 42) and Ubuntu 24.04
+(GNOME 46) with a logged-in GNOME desktop (physical, Wayland, Xorg, or XRDP).
+Ubuntu 24.04 remains the upstream-validated baseline; the Ubuntu 22.04 path
+adds Jammy-specific package and GNOME Remote Desktop compatibility and should
+be validated on the target host before unattended use. The installer selects
+`freerdp2-x11` on 22.04 and `freerdp3-x11` on 24.04, feature-detects newer
+`grdctl` commands, and fails before making partial changes on any other OS
+or architecture.
 
 Using—or needing—another Ubuntu release, desktop/session, CPU architecture,
 UU version, or controller platform? [Share one compatibility report or
@@ -382,11 +387,13 @@ interface every ten seconds. If it changes, the whole relay is rebuilt once on
 the new route; no additional watcher or service is installed. Use
 `--network-interface all` to remove the restriction.
 
-Ubuntu 24.04's libei 1.2.1 leaks the received keyboard-keymap descriptor after
-duplicating it. The installer builds the exact upstream one-line fix from a
-hash-verified 1.2.1 archive and loads that library only into this bridge's
-GNOME RDP child. A raised child limit and persistent 4096-descriptor relay
-guard remain as defense in depth:
+Ubuntu 24.04's GNOME 46 path links libei 1.2.1, whose affected keymap handling
+leaks the received keyboard-keymap descriptor after duplicating it. The
+installer builds the exact upstream one-line fix from a hash-verified 1.2.1
+archive and loads that library only into this bridge's GNOME RDP child.
+Ubuntu 22.04's GNOME 42 daemon does not link libei, so this backport is skipped
+there. A raised child limit and persistent 4096-descriptor relay guard remain
+as defense in depth:
 
 ```bash
 ./install.sh --skip-packages --skip-account-login \
