@@ -286,7 +286,7 @@ server_startup_ready() {
     [[ "$modified" =~ ^[0-9]+$ ]] || return 1
     ((modified >= service_start_epoch)) || return 1
     case "$release_version" in
-        4.39.1.1375|4.39.2.1561)
+        4.39.1.1375|4.39.2.1561|4.41.2.2602)
             signature="$(
                 /usr/bin/od -An -tx1 -N8 "$latest_server_log" 2>/dev/null |
                     /usr/bin/tr -d '[:space:]'
@@ -309,7 +309,7 @@ structured_release_ipc_ready() {
     local private_display
 
     case "$release_version" in
-        4.39.1.1375|4.39.2.1561) ;;
+        4.39.1.1375|4.39.2.1561|4.41.2.2602) ;;
         *) return 0 ;;
     esac
     [[ -x "$wine_bin" && -f "$uuyc_cli" ]] || return 1
@@ -400,7 +400,7 @@ service_start_epoch="$(date -d "$service_started_at" +%s 2>/dev/null || true)"
 latest_server_log=''
 server_log_pattern='log_*.txt'
 case "$release_version" in
-    4.39.1.1375|4.39.2.1561) server_log_pattern='log_*.slog' ;;
+    4.39.1.1375|4.39.2.1561|4.41.2.2602) server_log_pattern='log_*.slog' ;;
 esac
 for _ in {1..240}; do
     latest_server_log="$(
