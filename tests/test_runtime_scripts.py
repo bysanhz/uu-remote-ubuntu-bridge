@@ -740,12 +740,47 @@ terminal_bridge_pid=
         self.assertIn("env -u ALL_PROXY -u all_proxy", builder)
         self.assertIn("freerdp-2082-jammy-pathcch.patch", builder)
         self.assertIn("reset --hard", builder)
-        self.assertIn("patch --forward --batch -p1", builder)
+        self.assertIn('apply --check "$freerdp_patch"', builder)
+        self.assertIn('apply "$freerdp_patch"', builder)
         self.assertIn("if(MSVC)", jammy_patch)
         self.assertIn("winpr_library_add_public(pathcch)", jammy_patch)
         expected = "d391cbb7a21abe4ab5475bff5d96b51329f4f758156bf59b460bc19fe0297492"
         self.assertIn(expected, builder)
         self.assertIn(expected, verifier)
+
+    def test_freerdp_jammy_patch_is_well_formed_and_applies(self):
+        patch_file = (
+            REPOSITORY / "patches" / "freerdp-2082-jammy-pathcch.patch"
+        )
+        source = """# preface
+if(MSVC OR MINGW)
+  winpr_library_add_public(shlwapi)
+  winpr_library_add_public(pathcch)
+endif()
+"""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target = root / "winpr" / "libwinpr" / "path" / "CMakeLists.txt"
+            target.parent.mkdir(parents=True)
+            target.write_text(source)
+
+            subprocess.run(
+                ["git", "apply", "--check", str(patch_file)],
+                check=True,
+                cwd=root,
+            )
+            subprocess.run(
+                ["git", "apply", str(patch_file)],
+                check=True,
+                cwd=root,
+            )
+
+            patched = target.read_text()
+            self.assertIn("if(MSVC OR MINGW)", patched)
+            self.assertIn("winpr_library_add_public(shlwapi)", patched)
+            self.assertIn("if(MSVC)", patched)
+            self.assertIn("winpr_library_add_public(pathcch)", patched)
 
     def test_winpr_shim_uses_numeric_package_identity(self):
         shim = (REPOSITORY / "src" / "winpr_sspi_shim.c").read_text()
