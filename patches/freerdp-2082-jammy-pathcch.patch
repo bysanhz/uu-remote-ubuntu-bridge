@@ -1,8 +1,6 @@
 --- a/winpr/libwinpr/path/CMakeLists.txt
 +++ b/winpr/libwinpr/path/CMakeLists.txt
-@@ -23,8 +23,11 @@
- endif()
- 
+@@ -26,4 +26,9 @@
  if(MSVC OR MINGW)
    winpr_library_add_public(shlwapi)
 +endif()
@@ -12,4 +10,3 @@
 +if(MSVC)
    winpr_library_add_public(pathcch)
  endif()
- 
