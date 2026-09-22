@@ -11,6 +11,7 @@ winegcc="${WINEGCC:-/opt/wine-stable/bin/winegcc}"
 host_cc="${HOST_CC:-gcc}"
 host_strip="${HOST_STRIP:-strip}"
 common=(-std=c11 -O2 -Wall -Wextra -Werror)
+mingw_common=("${common[@]}" -D_WIN32_WINNT=0x0600)
 pe_link=(-Wl,--no-insert-timestamp)
 
 for command in "$cc" "$strip" "$winegcc" "$host_cc" "$host_strip"; do
@@ -22,32 +23,32 @@ done
 
 mkdir -p "$output_dir"
 
-"$cc" "${common[@]}" "${pe_link[@]}" -shared \
+"$cc" "${mingw_common[@]}" "${pe_link[@]}" -shared \
     -o "$output_dir/uu-input-bridge.dll" \
     "$repo_dir/src/uu_input_bridge.c" -luser32
-"$cc" "${common[@]}" "${pe_link[@]}" -shared \
+"$cc" "${mingw_common[@]}" "${pe_link[@]}" -shared \
     -o "$output_dir/uu-cursor-guard.dll" \
     "$repo_dir/src/uu_cursor_guard.c" -luser32 -lgdi32
-"$cc" "${common[@]}" "${pe_link[@]}" -municode -mwindows \
+"$cc" "${mingw_common[@]}" "${pe_link[@]}" -municode -mwindows \
     -o "$output_dir/uu-input-broker.exe" \
     "$repo_dir/src/uu_input_broker.c" -luser32 -lws2_32
-"$cc" "${common[@]}" "${pe_link[@]}" -municode \
+"$cc" "${mingw_common[@]}" "${pe_link[@]}" -municode \
     -o "$output_dir/uu-injector.exe" \
     "$repo_dir/src/uu_injector.c"
-"$cc" "${common[@]}" "${pe_link[@]}" -municode \
+"$cc" "${mingw_common[@]}" "${pe_link[@]}" -municode \
     -o "$output_dir/uu-service-control.exe" \
     "$repo_dir/src/uu_service_control.c" -ladvapi32
-"$cc" "${common[@]}" "${pe_link[@]}" -municode \
+"$cc" "${mingw_common[@]}" "${pe_link[@]}" -municode \
     -I "$repo_dir/src" \
     -o "$output_dir/uu-wine-clipboard-bridge.exe" \
     "$repo_dir/src/uu_wine_clipboard_bridge.c" -lws2_32
-"$cc" "${common[@]}" "${pe_link[@]}" -I "$repo_dir/src" \
+"$cc" "${mingw_common[@]}" "${pe_link[@]}" -I "$repo_dir/src" \
     -o "$output_dir/uu-terminal-proxy.exe" \
     "$repo_dir/src/uu_terminal_proxy.c" -lws2_32
-"$cc" "${common[@]}" "${pe_link[@]}" -mwindows \
+"$cc" "${mingw_common[@]}" "${pe_link[@]}" -mwindows \
     -o "$output_dir/uu-healthd-stub.exe" \
     "$repo_dir/src/winlogon.c"
-"$cc" "${common[@]}" "${pe_link[@]}" -shared \
+"$cc" "${mingw_common[@]}" "${pe_link[@]}" -shared \
     -o "$output_dir/winpr-sspi-shim.dll" \
     "$repo_dir/src/winpr_sspi_shim.c"
 "$host_cc" "${common[@]}" -fPIC -shared \
