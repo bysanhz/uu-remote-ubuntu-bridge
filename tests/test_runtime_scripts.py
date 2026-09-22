@@ -728,14 +728,14 @@ terminal_bridge_pid=
         builder = (REPOSITORY / "scripts" / "build-winpr.sh").read_text()
         verifier = (REPOSITORY / "scripts" / "verify.sh").read_text()
 
-        self.assertIn("168925dac792142f6d0b66e7e2d568a3d439521c", builder)
+        self.assertIn("651ab269524adbda4d673efa60d2e391ef7555a7", builder)
         self.assertIn(
-            "/lastSuccessfulBuild/arch=win64,label=vs2017/"
-            "artifact/install/bin/sdl-freerdp.exe",
+            "/2082/artifact/install/bin/sdl-freerdp.exe",
             builder,
         )
+        self.assertNotIn("/lastSuccessfulBuild/", builder)
         self.assertIn("env -u ALL_PROXY -u all_proxy", builder)
-        expected = "b384347b6d0dd1e0c9912d18f5993b4e30643470e2a627e112debb34e8710762"
+        expected = "d391cbb7a21abe4ab5475bff5d96b51329f4f758156bf59b460bc19fe0297492"
         self.assertIn(expected, builder)
         self.assertIn(expected, verifier)
 
