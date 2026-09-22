@@ -70,7 +70,7 @@ download() {
     exit 1
 }
 
-for command in cmake curl git ninja patch sha256sum tar \
+for command in cmake curl git ninja sha256sum tar \
     x86_64-w64-mingw32-gcc-win32 x86_64-w64-mingw32-windres; do
     require "$command"
 done
@@ -111,10 +111,8 @@ if [[ "$(git -C "$source_dir" rev-parse HEAD)" != "$freerdp_commit" ]]; then
     exit 1
 fi
 
-(
-    cd "$source_dir"
-    patch --forward --batch -p1 <"$freerdp_patch"
-)
+git -C "$source_dir" apply --check "$freerdp_patch"
+git -C "$source_dir" apply "$freerdp_patch"
 
 rm -rf "$build_dir"
 cmake -S "$source_dir" -B "$build_dir" -G Ninja \
