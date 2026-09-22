@@ -291,11 +291,20 @@ if [[ ! -r /etc/os-release ]]; then
 fi
 # shellcheck source=/dev/null
 source /etc/os-release
-if [[ "${ID:-}" != ubuntu || "${VERSION_ID:-}" != 24.04 ]]; then
-    printf 'Only Ubuntu 24.04 is currently supported; detected %s %s.\n' \
+if [[ "${ID:-}" != ubuntu ||
+      ( "${VERSION_ID:-}" != 22.04 && "${VERSION_ID:-}" != 24.04 ) ]]; then
+    printf 'Only Ubuntu 22.04 and 24.04 are currently supported; detected %s %s.\n' \
         "${ID:-unknown}" "${VERSION_ID:-unknown}" >&2
     exit 1
 fi
+case "$VERSION_ID" in
+    22.04)
+        host_freerdp_package=freerdp2-x11
+        ;;
+    24.04)
+        host_freerdp_package=freerdp3-x11
+        ;;
+esac
 if [[ ! "$rdp_port" =~ ^[1-9][0-9]{0,4}$ ]] ||
    ((rdp_port < 1024 || rdp_port > 65535)); then
     printf 'The RDP port must be an integer from 1024 through 65535.\n' >&2
@@ -472,7 +481,7 @@ install_winehq() {
 install_packages() {
     sudo apt-get update
     sudo apt-get install -y \
-        acl aria2 binutils ca-certificates cmake crudini curl freerdp3-x11 \
+        acl aria2 binutils ca-certificates cmake crudini curl "$host_freerdp_package" \
         gcc \
         gcc-mingw-w64-x86-64 \
         git gnome-remote-desktop iproute2 jq libsecret-tools libx11-6 \
@@ -545,6 +554,20 @@ for command in curl meson ninja patch readelf sha256sum /usr/bin/systemctl \
         exit 1
     fi
 done
+
+grd_uses_libei=false
+if LC_ALL=C /usr/bin/readelf -d \
+    /usr/libexec/gnome-remote-desktop-daemon 2>/dev/null | \
+    /usr/bin/grep -F '[libei.so.1]' >/dev/null; then
+    grd_uses_libei=true
+fi
+
+grdctl_help="$("$grdctl_bin" --help 2>&1 || true)"
+grdctl_has_rdp_command() {
+    local command="$1"
+    /usr/bin/grep -Eq "^[[:space:]]+${command}([[:space:]]|$)" \
+        <<<"$grdctl_help"
+}
 
 release_manifest="$(realpath "$release_manifest")"
 manifest_field() {
@@ -674,9 +697,14 @@ fi
 
 "$repo_dir/scripts/build-compat.sh" "$compat_build"
 "$repo_dir/scripts/build-winpr.sh" "$freerdp_build"
-"$repo_dir/scripts/build-libei.sh" "$libei_build"
+if [[ "$grd_uses_libei" == true ]]; then
+    "$repo_dir/scripts/build-libei.sh" "$libei_build"
+fi
 
-mkdir -p "$wine_prefix/compat" "$freerdp_install" "$libei_install"
+mkdir -p "$wine_prefix/compat" "$freerdp_install"
+if [[ "$grd_uses_libei" == true ]]; then
+    mkdir -p "$libei_install"
+fi
 if [[ -e "$terminal_proxy_install" ]] &&
    { [[ ! -f "$installed_terminal_proxy" ]] ||
      ! /usr/bin/cmp -s "$terminal_proxy_install" \
@@ -712,9 +740,11 @@ install -m 0755 "$freerdp_build/"*.dll "$freerdp_build/sdl-freerdp.exe" \
     "$freerdp_install/"
 install -m 0755 "$compat_build/winpr-sspi-shim.dll" \
     "$freerdp_install/winpr-sspi-shim.dll"
-install -m 0755 "$libei_build/libei.so.1.2.1" \
-    "$libei_install/libei.so.1.2.1"
-ln -sfn libei.so.1.2.1 "$libei_install/libei.so.1"
+if [[ "$grd_uses_libei" == true ]]; then
+    install -m 0755 "$libei_build/libei.so.1.2.1" \
+        "$libei_install/libei.so.1.2.1"
+    ln -sfn libei.so.1.2.1 "$libei_install/libei.so.1"
+fi
 mkdir -p "$freerdp_install/ossl-modules"
 install -m 0755 "$freerdp_build/ossl-modules/legacy.dll" \
     "$freerdp_install/ossl-modules/legacy.dll"
@@ -892,12 +922,16 @@ if [[ -z "$rdp_password" ]]; then
     done
 fi
 
-"$grdctl_bin" rdp set-port "$rdp_port"
+if grdctl_has_rdp_command set-port; then
+    "$grdctl_bin" rdp set-port "$rdp_port"
+fi
 "$grdctl_bin" rdp set-tls-cert "$tls_cert"
 "$grdctl_bin" rdp set-tls-key "$tls_key"
 "$grdctl_bin" rdp set-credentials "$bridge_user" "$rdp_password"
 "$grdctl_bin" rdp disable-view-only
-"$grdctl_bin" rdp disable-port-negotiation
+if grdctl_has_rdp_command disable-port-negotiation; then
+    "$grdctl_bin" rdp disable-port-negotiation
+fi
 "$grdctl_bin" rdp enable
 printf '%s' "$rdp_password" | "$secret_tool_bin" store \
     --label='UU Remote Ubuntu bridge RDP credential' \
