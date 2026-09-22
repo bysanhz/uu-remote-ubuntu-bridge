@@ -556,8 +556,9 @@ for command in curl meson ninja patch readelf sha256sum /usr/bin/systemctl \
 done
 
 grd_uses_libei=false
-if /usr/bin/readelf -d /usr/libexec/gnome-remote-desktop-daemon 2>/dev/null | \
-   /usr/bin/grep -Fq 'Shared library: [libei.so.1]'; then
+if LC_ALL=C /usr/bin/readelf -d \
+    /usr/libexec/gnome-remote-desktop-daemon 2>/dev/null | \
+    /usr/bin/grep -F '[libei.so.1]' >/dev/null; then
     grd_uses_libei=true
 fi
 
