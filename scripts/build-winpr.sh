@@ -70,13 +70,14 @@ download() {
     exit 1
 }
 
-for command in cmake curl git ninja sha256sum tar \
+for command in cmake curl git ninja patch sha256sum tar \
     x86_64-w64-mingw32-gcc-win32 x86_64-w64-mingw32-windres; do
     require "$command"
 done
 
 mkdir -p "$downloads" "$output_dir"
-recipe_id="$freerdp_commit:$(sha256sum "${BASH_SOURCE[0]}" | awk '{print $1}')"
+freerdp_patch="$repo_dir/patches/freerdp-2082-jammy-pathcch.patch"
+recipe_id="$freerdp_commit:$(sha256sum "${BASH_SOURCE[0]}" | awk '{print $1}'):$(sha256sum "$freerdp_patch" | awk '{print $1}')"
 if [[ -f "$build_recipe" && -f "$build_checksums" ]] && \
    [[ "$(<"$build_recipe")" == "$recipe_id" ]] && \
    (cd "$output_dir" && sha256sum -c .build-sha256 >/dev/null 2>&1); then
@@ -103,11 +104,17 @@ if [[ ! -d "$source_dir/.git" ]]; then
         https://github.com/FreeRDP/FreeRDP.git "$source_dir"
 fi
 git -C "$source_dir" fetch --depth 1 origin "$freerdp_commit"
-git -C "$source_dir" checkout --detach "$freerdp_commit"
+git -C "$source_dir" checkout --detach --force "$freerdp_commit"
+git -C "$source_dir" reset --hard "$freerdp_commit"
 if [[ "$(git -C "$source_dir" rev-parse HEAD)" != "$freerdp_commit" ]]; then
     printf 'FreeRDP source revision verification failed\n' >&2
     exit 1
 fi
+
+(
+    cd "$source_dir"
+    patch --forward --batch -p1 <"$freerdp_patch"
+)
 
 rm -rf "$build_dir"
 cmake -S "$source_dir" -B "$build_dir" -G Ninja \
